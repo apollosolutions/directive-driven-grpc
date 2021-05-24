@@ -1,0 +1,44 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`serve kitchen sync 1`] = `
+Object {
+  "data": Object {
+    "DoSomething": Object {
+      "field_bool": true,
+      "field_bytes": "1234",
+      "field_child": Object {
+        "foo": "bar",
+      },
+      "field_double": 0.1,
+      "field_enum": "two",
+      "field_fixed32": 9,
+      "field_fixed64": 10,
+      "field_float": 0.20000000298023224,
+      "field_int32": -3,
+      "field_int64": -4,
+      "field_nested_child": Object {
+        "bar": "baz",
+      },
+      "field_nested_enum": "four",
+      "field_recursive": Object {
+        "depth": 1,
+        "recursive": Object {
+          "depth": 2,
+        },
+      },
+      "field_sfixed32": -11,
+      "field_sfixed64": -12,
+      "field_sint32": -7,
+      "field_sint64": -8,
+      "field_string": "{\\"fieldDouble\\":1.1,\\"fieldFloat\\":2.200000047683716,\\"fieldInt32\\":3,\\"fieldInt64\\":{\\"low\\":4,\\"high\\":0,\\"unsigned\\":false},\\"fieldUint32\\":5,\\"fieldUint64\\":{\\"low\\":6,\\"high\\":0,\\"unsigned\\":true},\\"fieldSint32\\":7,\\"fieldSint64\\":{\\"low\\":8,\\"high\\":0,\\"unsigned\\":false},\\"fieldFixed32\\":9,\\"fieldFixed64\\":{\\"low\\":10,\\"high\\":0,\\"unsigned\\":true},\\"fieldSfixed32\\":11,\\"fieldSfixed64\\":{\\"low\\":12,\\"high\\":0,\\"unsigned\\":false},\\"fieldBool\\":false,\\"fieldString\\":\\"hello\\",\\"fieldStrings\\":[\\"goodbye\\"],\\"fieldEnum\\":0,\\"fieldNestedEnum\\":0,\\"fieldChild\\":{\\"foo\\":\\"bar\\"},\\"fieldNestedChild\\":{\\"bar\\":\\"baz\\"},\\"fieldRecursive\\":{\\"depth\\":1,\\"recursive\\":{\\"depth\\":2}}}",
+      "field_strings": Array [
+        "a",
+        "b",
+        "c",
+      ],
+      "field_uint32": 5,
+      "field_uint64": 6,
+    },
+  },
+}
+`;

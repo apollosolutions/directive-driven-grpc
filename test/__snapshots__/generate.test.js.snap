@@ -1,0 +1,134 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`kitchen sync 1`] = `
+"schema
+  @coreExperimental(feature: \\"https://notareal.spec/core/v0.1\\")
+  @coreExperimental(feature: \\"https://notareal.spec/grpc/v0.1\\") {
+  query: Query
+  mutation: Mutation
+}
+
+directive @coreExperimental(feature: String!, as: String) repeatable on SCHEMA
+
+directive @grpc(
+  protoFile: String!
+  serviceName: String!
+  address: String!
+) on ENUM_VALUE
+
+directive @grpc__rename(
+  to: String!
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
+
+directive @grpc__wrap(
+  gql: String!
+  proto: String!
+) repeatable on FIELD_DEFINITION
+
+directive @grpc__fetch(
+  service: grpc__Service!
+  rpc: String!
+  dig: String
+  input: [String!]
+) on FIELD_DEFINITION
+
+enum grpc__Service {
+  KITCHEN_SINK
+    @grpc(
+      protoFile: \\"test/__fixtures__/kitchensink.proto\\"
+      serviceName: \\"KitchenSink\\"
+      address: \\"localhost:50051\\"
+    )
+}
+
+type Query {
+  _removeMe: String
+}
+
+type Mutation {
+  DoSomething(
+    field_double: Float
+    field_float: Float
+    field_int32: Int
+    field_int64: Int
+    field_uint32: Int
+    field_uint64: Int
+    field_sint32: Int
+    field_sint64: Int
+    field_fixed32: Int
+    field_fixed64: Int
+    field_sfixed32: Int
+    field_sfixed64: Int
+    field_bool: Boolean
+    field_string: String
+    field_bytes: String
+    field_strings: [String]
+    field_enum: Enum
+    field_nested_enum: Message_NestedEnum
+    field_child: ChildInput
+    field_nested_child: Message_NestedChildInput
+    field_recursive: RecursiveInput
+  ): Message! @grpc__fetch(service: KITCHEN_SINK, rpc: \\"DoSomething\\")
+}
+
+type Message {
+  field_double: Float
+  field_float: Float
+  field_int32: Int
+  field_int64: Int
+  field_uint32: Int
+  field_uint64: Int
+  field_sint32: Int
+  field_sint64: Int
+  field_fixed32: Int
+  field_fixed64: Int
+  field_sfixed32: Int
+  field_sfixed64: Int
+  field_bool: Boolean
+  field_string: String
+  field_bytes: String
+  field_strings: [String]
+  field_enum: Enum
+  field_nested_enum: Message_NestedEnum
+  field_child: Child
+  field_nested_child: Message_NestedChild
+  field_recursive: Recursive
+}
+
+enum Enum {
+  one
+  two
+}
+
+enum Message_NestedEnum {
+  three
+  four
+}
+
+type Child {
+  foo: String
+}
+
+type Message_NestedChild {
+  bar: String
+}
+
+type Recursive {
+  depth: Int
+  recursive: Recursive
+}
+
+input ChildInput {
+  foo: String
+}
+
+input Message_NestedChildInput {
+  bar: String
+}
+
+input RecursiveInput {
+  depth: Int
+  recursive: RecursiveInput
+}
+"
+`;

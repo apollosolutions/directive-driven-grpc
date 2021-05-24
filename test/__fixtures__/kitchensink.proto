@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+service KitchenSink {
+  rpc DoSomething (Message) returns (Message) {}
+}
+
+message Message {
+  double field_double = 1;
+  float field_float = 2;
+  int32 field_int32 = 3;
+  int64 field_int64 = 4;
+  uint32 field_uint32 = 5;
+  uint64 field_uint64 = 6;
+  sint32 field_sint32 = 7;
+  sint64 field_sint64 = 8;
+  fixed32 field_fixed32 = 9;
+  fixed64 field_fixed64 = 10;
+  sfixed32 field_sfixed32 = 11;
+  sfixed64 field_sfixed64 = 12;
+  bool field_bool = 13;
+  string field_string = 14;
+  bytes field_bytes = 15;
+
+  repeated string field_strings = 16;
+
+  Enum field_enum = 17;
+  NestedEnum field_nested_enum = 18;
+
+  Child field_child = 19;
+  NestedChild field_nested_child = 20;
+  Recursive field_recursive = 21;
+
+  enum NestedEnum {
+    three = 0;
+    four = 1;
+  }
+
+  message NestedChild {
+    string bar = 1;
+  }
+}
+
+enum Enum {
+  one = 0;
+  two = 1;
+}
+
+message Child {
+  string foo = 1;
+}
+
+message Recursive {
+  int32 depth = 1;
+  Recursive recursive = 2;
+}

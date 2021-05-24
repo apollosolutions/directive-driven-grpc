@@ -1,0 +1,124 @@
+type Movie @key(fields: "id") {
+  id: ID!
+  name: String
+  rating: Float
+  status: MovieStatus
+
+  sequel: Movie
+
+  director: Person @grpc__wrap(gql: "id", proto: "director_id")
+
+  cast(first: Int, after: String): CastConnection!
+    @grpc__fetch(
+      service: MOVIES
+      rpc: "GetCastForMovie"
+      input: { gql: "$source.id", proto: "movie_id" }
+    )
+}
+
+type Person @key(fields: "id") {
+  id: ID!
+}
+
+enum MovieStatus {
+  CONCEPT
+  PREPRODUCTION
+  PRODUCTION
+  POSTPRODUCTION
+  RELEASED
+}
+
+type Query {
+  movies(
+    first: Int @grpc__rename(to: "limit")
+    after: String @grpc__rename(to: "cursor")
+  ): MovieConnection! @grpc__fetch(service: MOVIES, rpc: "ListMovies")
+
+  movie(id: ID!): Movie
+    @grpc__fetch(service: MOVIES, rpc: "GetMovie", dig: "movie")
+
+  moviesBatch(ids: [ID!]!): [Movie]!
+    @grpc__fetch(service: MOVIES, rpc: "BatchGetMovies", dig: "movies")
+}
+
+type Mutation {
+  createMovie(movie: MovieInput!): CreateMovieResponse!
+    @grpc__fetch(service: MOVIES, rpc: "CreateMovie")
+
+  deleteMovie(id: ID!): DeleteMovieResponse!
+    @grpc__fetch(service: MOVIES, rpc: "DeleteMovie")
+}
+
+type MovieConnection {
+  nodes: [Movie!]! @grpc__rename(to: "movies")
+  pageInfo: PageInfo! @grpc__wrap(proto: "cursor", gql: "endCursor")
+}
+
+type PageInfo {
+  endCursor: String!
+}
+
+input MovieInput {
+  id: ID!
+  name: String
+  rating: Float
+  status: MovieStatus
+}
+
+type CreateMovieResponse {
+  movie: Movie
+}
+
+type DeleteMovieResponse {
+  deleted: Boolean!
+}
+
+type CastConnection {
+  nodes: [Person!]! @grpc__rename(to: "cast")
+  pageInfo: PageInfo! @grpc__wrap(proto: "cursor", gql: "endCursor")
+}
+
+directive @grpc(
+  protoFile: String!
+  serviceName: String!
+  address: String!
+) on ENUM_VALUE
+
+enum grpc__Service {
+  MOVIES
+    @grpc(
+      protoFile: "example/protos/service.proto"
+      serviceName: "com.example.Movies"
+      address: "localhost:50001"
+    )
+}
+
+directive @grpc__fetch(
+  service: grpc__Service!
+  rpc: String!
+  dig: String
+  input: [grpc__InputMap!]
+) on FIELD_DEFINITION
+
+input grpc__InputMap {
+  gql: String!
+  proto: String!
+}
+
+directive @grpc__rename(
+  to: String!
+) on OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+
+directive @grpc__wrap(
+  gql: String!
+  proto: String!
+) repeatable on FIELD_DEFINITION
+
+directive @coreExperimental(feature: String!, as: String) repeatable on SCHEMA
+
+schema
+  @coreExperimental(feature: "https://notareal.spec/core/v0.1")
+  @coreExperimental(feature: "https://notareal.spec/grpc/v0.1") {
+  query: Query
+  mutation: Mutation
+}

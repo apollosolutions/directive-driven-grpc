@@ -1,0 +1,38 @@
+{
+  "name": "grpc-graphql",
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@apollo/federation": "^0.25.0",
+    "@graphql-tools/schema": "^7.1.5",
+    "@graphql-tools/utils": "^7.10.0",
+    "@grpc/grpc-js": "^1.3.2",
+    "@grpc/proto-loader": "^0.6.2",
+    "apollo-server": "^2.24.1",
+    "concurrently": "^6.1.0",
+    "dataloader": "^2.0.0",
+    "graphql": "^15.5.0",
+    "jest": "^26.6.3",
+    "lodash-es": "^4.17.21",
+    "mali": "^0.42.0",
+    "meow": "^10.0.0",
+    "nodemon": "^2.0.7",
+    "prettier": "^2.3.0",
+    "typescript": "^4.2.4"
+  },
+  "scripts": {
+    "protoc": "proto-loader-gen-types --longs=String --enums=String --defaults --oneofs --grpcLib=@grpc/grpc-js --outDir=protos/ protos/*.proto",
+    "start:example": "concurrently -k npm:start:example:*",
+    "start:example:grpc": "nodemon example/grpc.js",
+    "start:example:graphql": "nodemon example/graphql.js example/movies.graphql",
+    "generate:example": "./bin/cli.js generate --proto example/protos/service.proto --service com.example.Movies --name MOVIES --address localhost:50001 > example/generated.graphql",
+    "grpcui": "grpcui -plaintext -import-path example/protos/ -proto service.proto localhost:50001",
+    "test": "node --experimental-vm-modules $(yarn bin)/jest"
+  },
+  "devDependencies": {
+    "@types/jest": "^26.0.23",
+    "@types/lodash-es": "^4.17.4",
+    "@types/prettier": "^2.2.3"
+  }
+}

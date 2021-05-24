@@ -1,0 +1,119 @@
+schema
+  @coreExperimental(feature: "https://notareal.spec/core/v0.1")
+  @coreExperimental(feature: "https://notareal.spec/grpc/v0.1") {
+  query: Query
+  mutation: Mutation
+}
+
+directive @coreExperimental(feature: String!, as: String) repeatable on SCHEMA
+
+directive @grpc(
+  protoFile: String!
+  serviceName: String!
+  address: String!
+) on ENUM_VALUE
+
+directive @grpc__rename(
+  to: String!
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
+
+directive @grpc__wrap(
+  gql: String!
+  proto: String!
+) repeatable on FIELD_DEFINITION
+
+directive @grpc__fetch(
+  service: grpc__Service!
+  rpc: String!
+  dig: String
+  input: [String!]
+) on FIELD_DEFINITION
+
+enum grpc__Service {
+  MOVIES
+    @grpc(
+      protoFile: "example/protos/service.proto"
+      serviceName: "com.example.Movies"
+      address: "localhost:50001"
+    )
+}
+
+type Query {
+  _removeMe: String
+}
+
+type Mutation {
+  ListMovies(limit: Int, cursor: String): ListMoviesResponse!
+    @grpc__fetch(service: MOVIES, rpc: "ListMovies")
+  GetMovie(id: ID): GetMovieResponse!
+    @grpc__fetch(service: MOVIES, rpc: "GetMovie")
+  BatchGetMovies(ids: [ID]): BatchGetMoviesResponse!
+    @grpc__fetch(service: MOVIES, rpc: "BatchGetMovies")
+  CreateMovie(movie: MovieInput): CreateMovieResponse!
+    @grpc__fetch(service: MOVIES, rpc: "CreateMovie")
+  DeleteMovie(id: ID): DeleteMovieResponse!
+    @grpc__fetch(service: MOVIES, rpc: "DeleteMovie")
+  GetCastForMovie(
+    movie_id: ID
+    first: Int
+    after: String
+  ): GetCastForMovieResponse!
+    @grpc__fetch(service: MOVIES, rpc: "GetCastForMovie")
+}
+
+type ListMoviesResponse {
+  movies: [Movie]
+  cursor: String
+}
+
+type Movie {
+  id: ID
+  name: String
+  rating: Float
+  status: Movie_Status
+  sequel: Movie
+  director_id: ID
+}
+
+enum Movie_Status {
+  CONCEPT
+  PREPRODUCTION
+  PRODUCTION
+  POSTPRODUCTION
+  RELEASED
+}
+
+type GetMovieResponse {
+  movie: Movie
+}
+
+type BatchGetMoviesResponse {
+  movies: [Movie]
+}
+
+type CreateMovieResponse {
+  movie: Movie
+}
+
+input MovieInput {
+  id: ID
+  name: String
+  rating: Float
+  status: Movie_Status
+  sequel: MovieInput
+  director_id: ID
+}
+
+type DeleteMovieResponse {
+  deleted: Boolean
+}
+
+type GetCastForMovieResponse {
+  cast: [Person]
+  cursor: String
+}
+
+type Person {
+  id: ID
+}
+

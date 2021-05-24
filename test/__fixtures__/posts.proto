@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+service Posts {
+  rpc ListPosts (ListPostsRequest) returns (ListPostsResponse) {}
+  rpc GetAuthor (GetAuthorRequest) returns (GetAuthorResponse) {}
+  rpc BatchGetAuthors (BatchGetAuthorsRequest) returns (BatchGetAuthorsResponse) {}
+}
+
+message ListPostsRequest {}
+
+message ListPostsResponse {
+  repeated Post posts = 1;
+}
+
+message GetAuthorRequest {
+  string id = 1;
+}
+
+message GetAuthorResponse {
+  Author author = 1;
+}
+
+message BatchGetAuthorsRequest {
+  repeated string ids = 1;
+}
+
+message BatchGetAuthorsResponse {
+  repeated Author authors = 2;
+}
+
+message Post {
+  string id = 1;
+  string title = 2;
+  string author_id = 3;
+}
+
+message Author {
+  string id = 1;
+  string name = 2;
+}

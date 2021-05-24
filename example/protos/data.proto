@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package com.example;
+
+message Movie {
+  enum Status {
+    CONCEPT = 0;
+    PREPRODUCTION = 1;
+    PRODUCTION = 2;
+    POSTPRODUCTION = 3;
+    RELEASED = 4;
+  }
+
+  string id = 1;
+  string name = 2;
+  float rating = 3;
+  Status status = 4;
+  Movie sequel = 5;
+
+  string director_id = 6;
+}
+
+message Person {
+  string id = 1;
+}

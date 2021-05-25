@@ -1,7 +1,11 @@
 import Mali from "mali";
 
+/**
+ * @param {any[]} recorder
+ * @returns {(_: any) => void}
+ */
 const ListPosts = (recorder) => (ctx) => {
-  recorder.push(ctx.req);
+  recorder.push(["ListPosts", ctx.req]);
   ctx.res = {
     posts: [
       {
@@ -24,10 +28,27 @@ const ListPosts = (recorder) => (ctx) => {
 };
 
 /**
- * @param {any} ctx
+ * @param {any[]} recorder
+ * @returns {(_: any) => void}
+ */
+const BatchGetPosts = (recorder) => (ctx) => {
+  recorder.push(["BatchGetPosts", ctx.req]);
+  ctx.res = {
+    posts: ctx.req.ids?.map((/** @type {string} */ id) => {
+      return {
+        id,
+        title: `Post ${id}`,
+      };
+    }),
+  };
+};
+
+/**
+ * @param {any[]} recorder
+ * @returns {(_: any) => void}
  */
 const GetAuthor = (recorder) => (ctx) => {
-  recorder.push(ctx.req);
+  recorder.push(["GetAuthor", ctx.req]);
   ctx.res = {
     author: {
       id: ctx.req.id,
@@ -37,12 +58,13 @@ const GetAuthor = (recorder) => (ctx) => {
 };
 
 /**
- * @param {{ req: { ids: string[] }, res: any }} ctx
+ * @param {any[]} recorder
+ * @returns {(_: any) => void}
  */
 const BatchGetAuthors = (recorder) => (ctx) => {
-  recorder.push(ctx.req);
+  recorder.push(["BatchGetAuthors", ctx.req]);
   ctx.res = {
-    authors: ctx.req.ids?.map((id) => {
+    authors: ctx.req.ids?.map((/** @type {string} */ id) => {
       return {
         id,
         name: `Author ${id}`,
@@ -61,6 +83,7 @@ export async function run(port) {
   const app = new Mali("test/__fixtures__/posts.proto", "Posts");
   app.use({
     ListPosts: ListPosts(requests),
+    BatchGetPosts: BatchGetPosts(requests),
     GetAuthor: GetAuthor(requests),
     BatchGetAuthors: BatchGetAuthors(requests),
   });

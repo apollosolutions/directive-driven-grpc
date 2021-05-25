@@ -1,19 +1,18 @@
-schema
-  @coreExperimental(feature: "https://notareal.spec/core/v0.1")
-  @coreExperimental(feature: "https://notareal.spec/grpc/v0.1") {
-  query: Query
-}
-
-directive @coreExperimental(feature: String!, as: String) repeatable on SCHEMA
-
 directive @grpc(
   protoFile: String!
   serviceName: String!
   address: String!
+  metadata: [grpc__Metadata!]
 ) on ENUM_VALUE
 
-directive @grpc__rename(
-  to: String!
+input grpc__Metadata {
+  name: String!
+  value: String
+  valueFrom: String
+}
+
+directive @grpc__renamed(
+  from: String!
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
 
 directive @grpc__wrap(
@@ -25,17 +24,20 @@ directive @grpc__fetch(
   service: grpc__Service!
   rpc: String!
   dig: String
-  input: [String!]
+  mapArguments: [grpc__InputMap!]
+  dataloader: grpc__Dataloader
 ) on FIELD_DEFINITION
 
-directive @grpc__fetchBatch(
-  service: grpc__Service!
-  rpc: String!
+input grpc__InputMap {
+  sourceField: String!
+  arg: String!
+}
+
+input grpc__Dataloader {
   key: String!
   listArgument: String!
   responseKey: String
-  dig: String
-) on FIELD_DEFINITION
+}
 
 enum grpc__Service {
   POSTS
@@ -54,13 +56,15 @@ type Post {
   id: ID
   title: String
   author: Author
-    @grpc__fetchBatch(
+    @grpc__fetch(
       service: POSTS
       rpc: "BatchGetAuthors"
-      key: "$source.author_id"
-      listArgument: "ids"
       dig: "authors"
-      responseKey: "id"
+      dataloader: {
+        key: "$source.author_id"
+        listArgument: "ids"
+        responseKey: "id"
+      }
     )
 }
 

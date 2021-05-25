@@ -1,50 +1,20 @@
 import {
   DirectiveLocation,
   GraphQLDirective,
+  GraphQLInputObjectType,
   GraphQLList,
   GraphQLNonNull,
   GraphQLString,
 } from "graphql";
 
-export const coreExperimental = new GraphQLDirective({
-  name: "coreExperimental",
-  isRepeatable: true,
-  locations: [DirectiveLocation.SCHEMA],
-  args: {
-    feature: {
-      type: GraphQLNonNull(GraphQLString),
-    },
-    as: {
-      type: GraphQLString,
-    },
+const grpcMetadata = new GraphQLInputObjectType({
+  name: "grpc__Metadata",
+  fields: {
+    name: { type: GraphQLNonNull(GraphQLString) },
+    value: { type: GraphQLString },
+    valueFrom: { type: GraphQLString },
   },
 });
-
-/** @type {import("graphql").DirectiveNode} */
-export const coreExperimentalApplied = {
-  kind: "Directive",
-  name: { kind: "Name", value: coreExperimental.name },
-  arguments: [
-    {
-      kind: "Argument",
-      name: { kind: "Name", value: "feature" },
-      value: { kind: "StringValue", value: "https://notareal.spec/core/v0.1" },
-    },
-  ],
-};
-
-/** @type {import("graphql").DirectiveNode} */
-export const grpcFeatureApplied = {
-  kind: "Directive",
-  name: { kind: "Name", value: coreExperimental.name },
-  arguments: [
-    {
-      kind: "Argument",
-      name: { kind: "Name", value: "feature" },
-      value: { kind: "StringValue", value: "https://notareal.spec/grpc/v0.1" },
-    },
-  ],
-};
 
 export const grpc = new GraphQLDirective({
   name: "grpc",
@@ -53,6 +23,7 @@ export const grpc = new GraphQLDirective({
     protoFile: { type: GraphQLNonNull(GraphQLString) },
     serviceName: { type: GraphQLNonNull(GraphQLString) },
     address: { type: GraphQLNonNull(GraphQLString) },
+    metadata: { type: GraphQLList(GraphQLNonNull(grpcMetadata)) },
   },
 });
 
@@ -90,17 +61,35 @@ export function makeGrpcApplied({ protoFile, serviceName, address }) {
 export function makeGrpcFetch(serviceEnum) {
   return new GraphQLDirective({
     name: "grpc__fetch",
-    locations: [DirectiveLocation.FIELD_DEFINITION],
+    locations: [DirectiveLocation.FIELD_DEFINITION, DirectiveLocation.OBJECT],
     args: {
       service: {
         type: GraphQLNonNull(serviceEnum),
       },
       rpc: { type: GraphQLNonNull(GraphQLString) },
       dig: { type: GraphQLString },
-      input: { type: GraphQLList(GraphQLNonNull(GraphQLString)) },
+      mapArguments: { type: GraphQLList(GraphQLNonNull(grpcInputMapType)) },
+      dataloader: { type: grpcDataloader },
     },
   });
 }
+
+export const grpcInputMapType = new GraphQLInputObjectType({
+  name: "grpc__InputMap",
+  fields: {
+    sourceField: { type: GraphQLNonNull(GraphQLString) },
+    arg: { type: GraphQLNonNull(GraphQLString) },
+  },
+});
+
+export const grpcDataloader = new GraphQLInputObjectType({
+  name: "grpc__Dataloader",
+  fields: {
+    key: { type: GraphQLNonNull(GraphQLString) },
+    listArgument: { type: GraphQLNonNull(GraphQLString) },
+    responseKey: { type: GraphQLString },
+  },
+});
 
 /**
  * @param {{ service: string; rpc: string; }} params
@@ -126,7 +115,7 @@ export function makeGrpcFetchApplied({ service, rpc }) {
 }
 
 export const grpcRename = new GraphQLDirective({
-  name: "grpc__rename",
+  name: "grpc__renamed",
   locations: [
     DirectiveLocation.FIELD_DEFINITION,
     DirectiveLocation.ARGUMENT_DEFINITION,
@@ -134,7 +123,7 @@ export const grpcRename = new GraphQLDirective({
     DirectiveLocation.INPUT_FIELD_DEFINITION,
   ],
   args: {
-    to: { type: GraphQLNonNull(GraphQLString) },
+    from: { type: GraphQLNonNull(GraphQLString) },
   },
 });
 

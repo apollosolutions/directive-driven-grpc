@@ -2,6 +2,7 @@ syntax = "proto3";
 
 service Posts {
   rpc ListPosts (ListPostsRequest) returns (ListPostsResponse) {}
+  rpc BatchGetPosts (BatchGetPostsRequest) returns (BatchGetPostsResponse) {}
   rpc GetAuthor (GetAuthorRequest) returns (GetAuthorResponse) {}
   rpc BatchGetAuthors (BatchGetAuthorsRequest) returns (BatchGetAuthorsResponse) {}
 }
@@ -10,6 +11,14 @@ message ListPostsRequest {}
 
 message ListPostsResponse {
   repeated Post posts = 1;
+}
+
+message BatchGetPostsRequest {
+  repeated string ids = 1;
+}
+
+message BatchGetPostsResponse {
+  repeated Post posts = 2;
 }
 
 message GetAuthorRequest {

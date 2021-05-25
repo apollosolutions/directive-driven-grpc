@@ -1,14 +1,14 @@
 import { run } from "./__fixtures__/kitchensink.js";
 import { makeFieldResolver } from "../src/execute.js";
 import { buildSchema, graphql } from "graphql";
-import { findServices } from "../src/lib.js";
+import { findServices } from "../src/protos.js";
 import { readFileSync } from "fs";
 
 test("serve kitchen sync", async () => {
   const schema = buildSchema(
     readFileSync("test/__fixtures__/kitchensink.graphql", "utf-8")
   );
-  const services = findServices(schema);
+  const services = findServices(schema, { cwd: process.cwd() });
 
   const stopGrpc = await run(50001);
 
@@ -94,31 +94,28 @@ test("renaming", async () => {
   
   type Query {
     doSomething(
-      input: String @grpc__rename(to: "field_string")
+      input: String @grpc__renamed(from: "field_string")
+      field_enum: RenamedEnum
     ): Result! @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
   }
 
   type Result {
-    output: String @grpc__rename(to: "field_string")
+    output: String @grpc__renamed(from: "field_string")
     field_enum: RenamedEnum
-  }
-
-  type Mutation {
-    dummy: String
   }
 
   enum RenamedEnum {
     one
-    TWO @grpc__rename(to: "two")
+    TWO @grpc__renamed(from: "two")
   }
   `);
-  const services = findServices(schema);
+  const services = findServices(schema, { cwd: process.cwd() });
 
   const stopGrpc = await run(50001);
 
   const result = await graphql({
     schema,
-    source: `{ doSomething(input: "hello") { output field_enum } }`,
+    source: `{ doSomething(input: "hello" field_enum: TWO) { output field_enum } }`,
     fieldResolver: makeFieldResolver(services),
   });
 
@@ -127,7 +124,7 @@ test("renaming", async () => {
       "data": Object {
         "doSomething": Object {
           "field_enum": "TWO",
-          "output": "{\\"fieldString\\":\\"hello\\"}",
+          "output": "{\\"fieldString\\":\\"hello\\",\\"fieldEnum\\":1}",
         },
       },
     }
@@ -153,12 +150,8 @@ test("nested rpc calls", async () => {
   type Child {
     field_string: String
   }
-
-  type Mutation {
-    dummy: String
-  }
   `);
-  const services = findServices(schema);
+  const services = findServices(schema, { cwd: process.cwd() });
 
   const stopGrpc = await run(50001);
 
@@ -198,7 +191,7 @@ test("input types", async () => {
   
   type Query {
     doSomething(
-      arg: MyMessage @grpc__rename(to: "field_child")
+      arg: MyMessage @grpc__renamed(from: "field_child")
     ): Message! @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
   }
 
@@ -209,12 +202,8 @@ test("input types", async () => {
   input MyMessage {
     foo: String
   }
-
-  type Mutation {
-    dummy: String
-  }
   `);
-  const services = findServices(schema);
+  const services = findServices(schema, { cwd: process.cwd() });
 
   const stopGrpc = await run(50001);
 
@@ -261,12 +250,8 @@ test("wrapping", async () => {
   type Child {
     foo: String
   }
-
-  type Mutation {
-    dummy: String
-  }
   `);
-  const services = findServices(schema);
+  const services = findServices(schema, { cwd: process.cwd() });
 
   const stopGrpc = await run(50001);
 
@@ -303,12 +288,8 @@ test("dig", async () => {
     doSomethingChild: Int! 
       @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething", dig: "field_recursive.recursive.depth")
   }
-
-  type Mutation {
-    dummy: String
-  }
   `);
-  const services = findServices(schema);
+  const services = findServices(schema, { cwd: process.cwd() });
 
   const stopGrpc = await run(50001);
 
@@ -330,7 +311,7 @@ test("dig", async () => {
 });
 
 test("input mapping", async () => {
-  const schema = buildSchema(`
+  const schema = buildSchema(`#graphql
   ${readFileSync("test/__fixtures__/core.graphql")}
   
   type Query {
@@ -343,14 +324,14 @@ test("input mapping", async () => {
     field_string: String
 
     nested: Message!
-      @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething", input: "$source.field_int32 => field_int32")
-  }
-
-  type Mutation {
-    dummy: String
+      @grpc__fetch(
+        service: KITCHEN_SINK, 
+        rpc: "DoSomething", 
+        mapArguments: { sourceField: "field_int32", arg: "field_int32" }
+      )
   }
   `);
-  const services = findServices(schema);
+  const services = findServices(schema, { cwd: process.cwd() });
 
   const stopGrpc = await run(50001);
 

@@ -1,18 +1,63 @@
-import { credentials, loadPackageDefinition } from "@grpc/grpc-js";
+import { getDirectives } from "@graphql-tools/utils";
+import { credentials, loadPackageDefinition, Metadata } from "@grpc/grpc-js";
 import { loadSync } from "@grpc/proto-loader";
-import { get } from "lodash-es";
+import { GraphQLSchema, isEnumType } from "graphql";
+import { get, toPath } from "lodash-es";
+import { resolve } from "path";
+
+export const grpcServiceEnumName = "grpc__Service";
+
+/**
+ * @param {GraphQLSchema} schema
+ * @param {{ cwd: string }} options
+ * @returns {Map<string, ProtoService>}
+ */
+export function findServices(schema, { cwd }) {
+  const servicesEnum = Object.values(schema.getTypeMap()).find(
+    (d) => isEnumType(d) && d.name === grpcServiceEnumName
+  );
+
+  if (!isEnumType(servicesEnum)) {
+    return new Map();
+  }
+
+  const services =
+    servicesEnum.getValues().map((v) => {
+      const { grpc } = getDirectives(schema, v);
+      if (!grpc) return;
+
+      const { serviceName, address, protoFile, metadata } = grpc;
+      if (!serviceName || !address || !protoFile) return;
+
+      return ProtoService.load(
+        {
+          serviceName,
+          address,
+          name: v.name,
+          protoFile,
+          metadata,
+        },
+        { cwd }
+      );
+    }) ?? [];
+
+  const result = new Map();
+  for (const service of services) {
+    if (service) {
+      result.set(service.name, service);
+    }
+  }
+
+  return result;
+}
 
 export class ProtoService {
   /**
-   * @param {{
-   *  serviceName: string;
-   *  address: string;
-   *  name: string;
-   *  protoFile: string;
-   * }} params
+   * @param {import("./typings").ServiceConfig} params
+   * @param {{ cwd: string }} options
    */
-  static load({ serviceName, address, name, protoFile }) {
-    const definitions = loadSync(protoFile, {
+  static load({ serviceName, address, name, protoFile, metadata }, { cwd }) {
+    const definitions = loadSync(resolve(cwd, protoFile), {
       keepCase: true,
       longs: String,
       enums: String,
@@ -29,6 +74,7 @@ export class ProtoService {
       service,
       address,
       name,
+      metadata,
     });
   }
 
@@ -38,35 +84,41 @@ export class ProtoService {
    *  serviceName: string;
    *  address: string;
    *  name: string;
-   *  service: import("@grpc/proto-loader").ServiceDefinition
+   *  service: import("@grpc/proto-loader").ServiceDefinition;
+   *  metadata: { name: string; value?: string; valueFrom?: string }[]
    * }} params
    */
-  constructor({ definitions, serviceName, address, name, service }) {
+  constructor({ definitions, serviceName, address, name, service, metadata }) {
     this.name = name;
     this.definitions = definitions;
     this.namespace = findCommonPrefix(Object.keys(definitions));
     this.serviceName = serviceName;
-    this.serviceNameWithoutNamespace = this.serviceName.slice(
-      this.namespace.length
-    );
     this.address = address;
     this.service = service;
+    this.metadata = metadata;
   }
 
   getClient() {
-    this.grpc = this.grpc || loadPackageDefinition(this.definitions);
-    const Service = get(this.grpc, this.serviceName);
-    return new Service(this.address, credentials.createInsecure());
+    this.grpc = this.grpc ?? loadPackageDefinition(this.definitions);
+    if (!this.client) {
+      const Service = get(this.grpc, this.serviceName);
+      this.client = new Service(this.address, credentials.createInsecure());
+    }
+    return this.client;
   }
 
   /**
    * @param {string} rpcName
    * @param {any} request
+   * @param {any} ctx
    */
-  call(rpcName, request) {
+  call(rpcName, request, ctx) {
+    const metadata = processMetadata(this.metadata, ctx);
+
     return new Promise((resolve, reject) => {
       this.getClient()[rpcName](
         request,
+        metadata,
         (/** @type {any} */ err, /** @type {any} */ response) => {
           if (err) reject(err);
           resolve(response);
@@ -77,25 +129,86 @@ export class ProtoService {
 
   /**
    * @param {string} name
+   * @param {import("@grpc/proto-loader").MessageType?} [parent]
+   * @returns {import("@grpc/proto-loader").MessageType | undefined}
    */
-  getType(name) {
-    return this.definitions[`${this.namespace}${name}`]?.type;
+  getMessageType(name, parent) {
+    if (parent?.nestedType) {
+      const nested = parent.nestedType.find((t) => t.name === name);
+      if (nested) return nested;
+    }
+
+    const definition = this.definitions[`${this.namespace}${name}`];
+    if (isMessageTypeDefinition(definition)) return definition.type;
   }
 
   /**
-   * @param {any} name
-   * @param {{ enumType: any[]; }} parent
-   * @returns {import("@grpc/proto-loader").EnumTypeDefinition | undefined}
+   * @param {string} name
+   * @param {import("@grpc/proto-loader").MessageType?} [parent]
+   * @returns {import("@grpc/proto-loader").EnumType | undefined}
    */
-  getNestedEnum(name, parent) {
-    if (parent.enumType) {
-      return parent.enumType.find((t) => t.name === name);
+  getEnumType(name, parent) {
+    if (parent?.enumType) {
+      const nested = parent.enumType.find((t) => t.name === name);
+      if (nested) return nested;
+    }
+
+    const definition = this.definitions[`${this.namespace}${name}`];
+    if (isEnumTypeDefinition(definition)) return definition.type;
+  }
+
+  /**
+   * @param {string} name
+   */
+  getRPC(name) {
+    return this.service[name];
+  }
+
+  /**
+   * @param {import("@grpc/proto-loader").MessageType} startingType
+   * @param {string} dig - dot-delimited string
+   * @returns {import("@grpc/proto-loader").MessageType | null}
+   */
+  digFromType(startingType, dig) {
+    const path = toPath(dig);
+
+    /** @type {import("@grpc/proto-loader").MessageType | undefined} */
+    let type = startingType;
+
+    /** @type {string | undefined} */
+    let fieldName;
+
+    while ((fieldName = path.pop())) {
+      const field = type.field.find((f) => f.name === fieldName);
+      if (field) {
+        type = this.getMessageType(field.typeName);
+        if (!type) return null;
+      } else {
+        return null;
+      }
+    }
+
+    return type;
+  }
+}
+
+/**
+ * @param {{ name: string; value?: string; valueFrom?: string }[] | undefined} metadata
+ * @param {any} context - GraphQL request context
+ */
+function processMetadata(metadata, context) {
+  const grpcMeta = new Metadata();
+  if (!metadata) return grpcMeta;
+
+  for (const { name, value, valueFrom } of metadata) {
+    if (value) {
+      grpcMeta.add(name, value);
+    } else if (valueFrom) {
+      grpcMeta.add(name, get(context, valueFrom));
     }
   }
 
-  getRPCs() {
-    return Object.values(this.service);
-  }
+  return grpcMeta;
 }
 
 /**
@@ -134,8 +247,24 @@ export function isMethodDefinition(obj) {
 
 /**
  * @param {any} obj
+ * @return {obj is import("@grpc/proto-loader").MessageTypeDefinition}
+ */
+export function isMessageTypeDefinition(obj) {
+  return obj.format?.includes("DescriptorProto");
+}
+
+/**
+ * @param {any} obj
+ * @return {obj is import("@grpc/proto-loader").MessageType}
+ */
+export function isMessageType(obj) {
+  return "field" in obj;
+}
+
+/**
+ * @param {any} obj
  * @return {obj is import("@grpc/proto-loader").EnumTypeDefinition}
  */
 export function isEnumTypeDefinition(obj) {
-  return "value" in obj;
+  return obj.format?.includes("EnumDescriptorProto");
 }

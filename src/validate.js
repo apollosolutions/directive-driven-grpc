@@ -1,20 +1,25 @@
+import { getDirectives } from "@graphql-tools/utils";
 import {
-  buildSchema,
   getNamedType,
   GraphQLEnumType,
+  GraphQLObjectType,
   GraphQLSchema,
   isEnumType,
   isListType,
   isNonNullType,
+  isNullableType,
   isObjectType,
   isScalarType,
+  isUnionType,
 } from "graphql";
-import { ProtoService } from "./protos.js";
-import { findServices } from "./lib.js";
-import { findTypeForField } from "./objects.js";
-import { isProtoScalar, SCALAR_PROTO_MAP } from "./scalars.js";
-import { getDirectives } from "@graphql-tools/utils";
 import {
+  consolidateErrors,
+  makeDataloaderIncorrectArgKeyError,
+  makeDataloaderIncorrectEntityKeyError,
+  makeDataloaderIncorrectKeyFormatError,
+  makeDataloaderIncorrectListArgumentError,
+  makeDataloaderIncorrectResponseKeyError,
+  makeDataloaderIncorrectSourceKeyError,
   makeExtranousEnumValueError,
   makeIncorrectArgumentError,
   makeIncorrectArgumentTypeError,
@@ -25,442 +30,454 @@ import {
   makeInvalidFetchDigError,
   makeMissingEnumValueError,
   makeMissingFieldError,
+  makeMissingRpcError,
+  makeNonNullableRecursiveFieldError,
+  makeProtobufIsListError,
+  makeProtobufIsNotListError,
+  makeWrappedFieldNotFoundError,
 } from "./errors.js";
+import { findTypeForField } from "./objects.js";
+import { isMessageType, ProtoService } from "./protos.js";
+import { isProtoScalar, SCALAR_PROTO_MAP } from "./scalars.js";
 
 /**
- * @param {string} sdl
+ * @param {{ schema: GraphQLSchema; services: Map<string, ProtoService> }} params
  */
-export function validate(sdl) {
-  const schema = buildSchema(sdl);
-  const services = findServices(schema);
+export function validate({ schema, services }) {
+  const roots = [
+    ...findFetchRoots(schema, services),
+    ...findEntityFetchRoots(schema, services),
+  ];
 
-  const fields = findFetchRootFields(schema);
-
+  /** @type {import("./typings").ValidationError[]} */
   const allErrors = [];
+  const allFetchRootParents = new Map();
 
-  for (const fieldWithParent of fields) {
-    const { field } = fieldWithParent;
-    const paths = collectPathsFromFetchRoot(fieldWithParent, [], [], schema);
-
-    const directive = fetchDirective(schema, field, services);
-    if (!directive) continue; // can't happen
-
-    const { service, rpc, rpcName, dig } = directive;
-
-    allErrors.push(
-      ...validateFetchRootArguments(
-        fieldWithParent,
-        rpc,
-        rpcName,
-        schema,
-        service
-      )
-    );
-
-    for (const path of paths) {
-      const { ok, errors } = validateOutputFromFetchRoot(
-        path,
-        rpc,
-        rpcName,
-        service,
-        schema,
-        dig
+  for (const root of roots) {
+    const service = services.get(root.serviceName);
+    if (!service) throw new Error(`service ${root.serviceName} not found`);
+    const rpc = service.getRPC(root.rpcName);
+    if (!rpc) {
+      allErrors.push(
+        makeMissingRpcError({
+          serviceName: root.serviceName,
+          rpcName: root.rpcName,
+          path: { root, steps: [] },
+        })
       );
-      if (!ok) allErrors.push(...(errors ?? []));
+      continue;
+    }
+
+    const { errors, fetchRootParents } = walkPathsFromRoot({
+      root,
+      schema,
+      service,
+      rpc,
+    });
+    allErrors.push(...errors);
+
+    for (const [key, set] of fetchRootParents) {
+      if (!allFetchRootParents.has(key)) {
+        allFetchRootParents.set(key, new Set());
+      }
+      for (const value of set) {
+        allFetchRootParents.get(key).add(value);
+      }
     }
   }
 
-  return allErrors;
+  for (const root of roots) {
+    const service = services.get(root.serviceName);
+    if (!service) throw new Error(`service ${root.serviceName} not found`);
+    const rpc = service.getRPC(root.rpcName);
+    if (!rpc) continue; // error handled above
+
+    /** @type {import("./typings").Path} */
+    const path = {
+      root,
+      steps: [
+        {
+          gql: { type: root.parent, field: root.field },
+          protobuf: { type: rpc.responseType.type },
+        },
+      ],
+    };
+
+    allErrors.push(
+      ...validateFetchRootArguments({
+        root,
+        path,
+        schema,
+        rpc,
+        service,
+        fetchRootParents: allFetchRootParents,
+      })
+    );
+  }
+
+  return consolidateErrors(allErrors);
 }
 
 /**
- * @param {import("graphql").GraphQLSchema} schema
+ * @param {GraphQLSchema} schema
+ * @param {Map<string, ProtoService>} services
+ * @returns {(import("./typings").FetchRoot<any>)[]}
  */
-function findFetchRootFields(schema) {
+export function findFetchRoots(schema, services) {
   const rootTypes = Object.values(schema.getTypeMap()).filter(isObjectType);
 
   const rootFieldsWithParent = rootTypes.flatMap((o) => {
     const fields = Object.values(o.getFields()) ?? [];
-    return fields.map((f) => ({ parentName: o.name, field: f }));
+    return fields.map((f) => ({ parent: o, field: f }));
   });
 
-  return rootFieldsWithParent.filter(({ field }) => {
+  const results = rootFieldsWithParent.map(({ parent, field }) => {
     const { grpc__fetch } = getDirectives(schema, field);
-    return !!grpc__fetch;
+
+    if (grpc__fetch) {
+      return {
+        kind: grpc__fetch.dataloader
+          ? /** @type {"BATCH_FETCH"} */ ("BATCH_FETCH")
+          : /** @type {"FETCH"} */ ("FETCH"),
+        parent,
+        field,
+        serviceName: grpc__fetch.service,
+        fullyQualifiedServiceName: services.get(grpc__fetch.service)
+          ?.serviceName,
+        rpcName: grpc__fetch.rpc,
+        dig: grpc__fetch.dig,
+        mapArguments: grpc__fetch.mapArguments,
+        key: grpc__fetch.dataloader?.key,
+        listArgument: grpc__fetch.dataloader?.listArgument,
+        responseKey: grpc__fetch.dataloader?.responseKey,
+      };
+    }
   });
+
+  return results.filter(
+    /** @type {(_: any) => _ is any} */
+    ((o) => !!o)
+  );
 }
 
 /**
- * @param {{ parentName: string; field: import("graphql").GraphQLField<*,*>}} fieldWithParent
- * @param {import("./typings.js").PathPart[]} parents
- * @param {import("./typings.js").PathPart[][]} acc
  * @param {GraphQLSchema} schema
- * @param {?string} [overrideRpcName]
+ * @param {Map<string, ProtoService>} services
+ * @returns {(import("./typings").FetchRoot<any>)[]}
  */
-function collectPathsFromFetchRoot(
-  { field, parentName },
-  parents = [],
-  acc = [],
-  schema,
-  overrideRpcName = undefined
-) {
-  const namedType = getNamedType(field.type);
-  const isList = isListType(field.type);
-  const isNonNull = isNonNullType(field.type);
+function findEntityFetchRoots(schema, services) {
+  const rootTypes = Object.values(schema.getTypeMap()).filter(isObjectType);
+  const queryType = schema.getQueryType();
+  const entitiesField = queryType?.getFields()["_entities"];
 
-  const isRecursive = !!parents.find((p) => p.type === namedType.name);
+  const results = rootTypes.map((obj) => {
+    const { grpc__fetch } = getDirectives(schema, obj);
 
-  const { grpc__rename, grpc__wrap } = getDirectives(schema, field);
+    if (grpc__fetch) {
+      return {
+        kind: grpc__fetch.dataloader
+          ? /** @type {"BATCH_FETCH"} */ ("BATCH_FETCH")
+          : /** @type {"FETCH"} */ ("FETCH"),
+        parent: queryType,
+        field: entitiesField,
+        serviceName: grpc__fetch.service,
+        fullyQualifiedServiceName: services.get(grpc__fetch.service)
+          ?.serviceName,
+        rpcName: grpc__fetch.rpc,
+        dig: grpc__fetch.dig,
+        inputMap: grpc__fetch.mapArguments,
+        key: grpc__fetch.dataloader?.key,
+        listArgument: grpc__fetch.dataloader?.listArgument,
+        responseKey: grpc__fetch.dataloader?.responseKey,
+        entityType: obj,
+      };
+    }
+  });
 
-  const rpcName = grpc__rename?.to ?? field.name;
-  const wrapsFields = isObjectType(namedType) ? grpc__wrap ?? [] : [];
+  return results.filter(
+    /** @type {(_: any) => _ is any} */
+    ((o) => !!o)
+  );
+}
 
-  const part = {
-    field: field.name,
-    type: namedType.name,
-    parentType: parentName,
-    rpcName: overrideRpcName ?? rpcName,
-    isNonNull,
-    isList,
-    isRecursive,
-    isWrapped: wrapsFields.length > 0,
+/**
+ * @param {{
+ *  root: import("./typings").FetchRoot<any>;
+ *  schema: GraphQLSchema;
+ *  service: ProtoService;
+ *  rpc: import("@grpc/proto-loader").MethodDefinition<*,*>
+ * }} params
+ */
+function walkPathsFromRoot({ root, schema, service, rpc }) {
+  /** @type {import("./typings").ValidationError[]} */
+  const errors = [];
+  const fetchRootParents = new Map();
+
+  const gql = {
+    type: root.parent,
+    field: root.field,
   };
 
-  // when a wrap is encountered, break it up in multiple paths
-  if (wrapsFields.length) {
-    for (const { gql, proto } of wrapsFields) {
-      if (isObjectType(namedType)) {
-        const child = namedType.getFields()[gql];
-        if (!child) {
-          console.log("field missing:", gql, [
-            ...parents.slice().map((p) => p.field),
-            field.name,
-          ]);
-        } else {
-          collectPathsFromFetchRoot(
-            { field: child, parentName: namedType.name },
-            parents.slice(),
-            acc,
-            schema,
-            proto
-          );
-        }
-      }
-    }
-    return acc;
-  }
+  const protobuf = {
+    type: rpc.responseType.type,
+  };
 
-  if (isRecursive) {
-    const path = parents.slice();
-    path.push({ ...part, isLeaf: true });
-    acc.push(path);
-    return acc;
-  }
-
-  if (isScalarType(namedType) || isEnumType(namedType)) {
-    const path = parents.slice();
-    path.push({ ...part, isLeaf: true });
-    acc.push(path);
-    return acc;
-  }
-
-  const { grpc__fetch } = getDirectives(schema, field);
-  if (parents.length > 0 && grpc__fetch) return acc;
-
-  parents.push({ ...part, isLeaf: false });
-
-  if (isObjectType(namedType)) {
-    for (const field of Object.values(namedType.getFields())) {
-      const { grpc__fetch } = getDirectives(schema, field);
-
-      // new fetch root, don't recurse
-      if (grpc__fetch) break;
-
-      collectPathsFromFetchRoot(
-        { field, parentName: namedType.name },
-        parents.slice(),
-        acc,
-        schema
-      );
-    }
-  }
-
-  return acc;
-}
-
-/**
- * @param {GraphQLSchema} schema
- * @param {import("graphql").GraphQLField<*,*>} field
- * @param {Map<string, ProtoService>} services
- */
-function fetchDirective(schema, field, services) {
-  if (!field.astNode) return;
-  const { grpc__fetch } = getDirectives(schema, field);
-  const { service: serviceName, rpc: rpcName, dig, input } = grpc__fetch;
-
-  if (!serviceName) throw new Error("service arg missing");
-  if (!rpcName) throw new Error("rpc missing");
-
-  const service = services.get(serviceName);
-  if (!service) throw new Error(`no service named ${serviceName}`);
-
-  const rpc = service.service[rpcName];
-  if (!rpc) throw new Error(`no rpc named ${rpcName}`);
-
-  return { service, rpc, rpcName, dig, input };
-}
-
-/**
- * @param {{ field: import("graphql").GraphQLField<*,*>; parentName: string; }} field
- * @param {import("@grpc/proto-loader").MethodDefinition<*,*>} rpc
- * @param {string} rpcName
- * @param {GraphQLSchema} schema
- * @param {ProtoService} service
- */
-function validateFetchRootArguments(
-  { field, parentName },
-  rpc,
-  rpcName,
-  schema,
-  service
-) {
-  const errors = [];
-
-  const rpcRequestFields = rpc.requestType.type.field;
-
-  for (const arg of field.args) {
-    const { grpc__rename } = getDirectives(schema, arg);
-    let rpcFieldName = grpc__rename?.to ?? arg.name;
-
-    const messageField = rpcRequestFields.find((f) => f.name === rpcFieldName);
-
-    if (!messageField) {
-      errors.push(
-        makeIncorrectArgumentError({
-          operationType: parentName,
-          fieldName: field.name,
-          argName: arg.name,
-          renamedArgName: grpc__rename?.to,
-          rpc: rpcName,
-          returnType: rpc.requestType.type.name,
-        })
-      );
-    } else if (isProtoScalar(messageField.type)) {
-      const namedType = getNamedType(arg.type);
-      if (!SCALAR_PROTO_MAP[namedType.name]?.has(messageField.type)) {
-        errors.push(
-          makeIncorrectArgumentTypeError({
-            operationType: parentName,
-            fieldName: field.name,
-            argName: arg.name,
-            renamedArgName: grpc__rename?.to,
-            argType: namedType.name,
-            rpc: rpcName,
-            returnType: rpc.requestType.type.name,
-            protoField: rpcFieldName,
-            protoType: messageField.type,
-          })
-        );
-      }
-    }
-  }
-
-  errors.push(
-    ...validateFetchRootInputMaps({ field, parentName }, rpc, rpcName, schema)
+  pathWalker(
+    {
+      root,
+      schema,
+      service,
+      rpc,
+      errors,
+      fetchRootParents,
+    },
+    gql,
+    protobuf,
+    []
   );
 
-  // TODO: recurse through input objects
-
-  return errors;
+  return { errors, fetchRootParents };
 }
 
 /**
- * @param {{ field: import("graphql").GraphQLField<*,*>; parentName: string }} coordinate
- * @param {import("@grpc/proto-loader").MethodDefinition<*,*>} rpc
- * @param {any} rpcName
- * @param {GraphQLSchema} schema
+ * @param {{
+ *  root: import("./typings").FetchRoot<any>;
+ *  schema: GraphQLSchema;
+ *  service: ProtoService;
+ *  rpc: import("@grpc/proto-loader").MethodDefinition<*,*>;
+ *  errors: import("./typings").ValidationError[];
+ *  fetchRootParents: Map<string, Set<any>>;
+ * }} state
+ * @param {{
+ *  type: GraphQLObjectType;
+ *  field: import("graphql").GraphQLField<*,*>
+ * }} gql
+ * @param {{
+ *  type: import("@grpc/proto-loader").MessageType;
+ *  fieldName?: string;
+ * }} protobuf
+ * @param {import("./typings").PathStep[]} path
  */
-function validateFetchRootInputMaps(
-  { field, parentName },
-  rpc,
-  rpcName,
-  schema
-) {
-  /** @type {{ code: string; key: string; message: string; path: string; }[]} */
-  const errors = [];
+function pathWalker(state, gql, protobuf, path) {
+  if (path.length < 1) {
+    const namedType = getNamedType(gql.field.type);
 
-  const rpcRequestFields = rpc.requestType.type.field;
+    /** @type {import("@grpc/proto-loader").MessageType | null} */
+    let protobufType = protobuf.type;
 
-  const { grpc__fetch } = getDirectives(schema, field);
-  const { input } = grpc__fetch;
-  if (!input) return errors;
-
-  const inputs = Array.isArray(input) ? input : [input];
-  const pairs = inputs.map((i) => i.split(/\s+=>\s+/).map((s) => s.trim()));
-
-  for (const [gql, proto] of pairs) {
-    const messageField = rpcRequestFields.find((f) => f.name === proto);
-    if (!messageField) {
-      errors.push(
-        makeInputMapMissingProtoFieldError({
-          parentName,
-          fieldName: field.name,
-          gql,
-          proto,
-          rpcName,
-          requestType: rpc.requestType.type.name,
-        })
-      );
+    if (state.root.dig) {
+      protobufType = state.service.digFromType(protobufType, state.root.dig);
+      if (!protobufType) {
+        state.errors.push(
+          makeInvalidFetchDigError({
+            operationType: gql.type.name,
+            fieldName: gql.field.name,
+            dig: state.root.dig,
+            rpc: state.root.rpcName,
+            returnType: state.rpc.responseType.type.name,
+            path: {
+              root: state.root,
+              steps: [
+                {
+                  gql: { type: state.root.parent, field: state.root.field },
+                  protobuf: { type: protobuf.type },
+                },
+              ],
+            },
+          })
+        );
+        return;
+      }
     }
 
-    const parentType = schema.getType(parentName);
-    if (!isObjectType(parentType)) throw new Error("not possible");
-
-    const sourceFieldName = gql.replace("$source.", "");
-    const sourceField = parentType.getFields()[sourceFieldName];
-
-    if (!sourceField) {
-      errors.push(
-        makeInputMapMissingGqlFieldError({
-          parentName,
-          fieldName: field.name,
-          gql,
-          proto,
-          rpcName,
-          requestType: rpc.requestType.type.name,
-        })
-      );
-    }
-
-    if (messageField && sourceField) {
-      const namedType = getNamedType(sourceField.type);
-
-      if (isProtoScalar(messageField.type)) {
-        if (!SCALAR_PROTO_MAP[namedType.name]?.has(messageField.type)) {
-          errors.push(
-            makeInputMapMismatchedTypesError({
-              parentName,
-              fieldName: field.name,
-              gql,
-              gqlType: namedType.name,
-              proto,
-              protoType: messageField.type,
-              rpcName,
-              requestType: rpc.requestType.type.name,
-            })
-          );
-        }
-      } else {
-        throw new Error(
-          "mapping to object types with @grpc__fetchBatch(input:) is not supported"
+    if (isObjectType(namedType)) {
+      for (const field of Object.values(namedType.getFields())) {
+        pathWalker(state, { type: namedType, field }, { type: protobufType }, [
+          { gql, protobuf },
+        ]);
+      }
+    } else if (isUnionType(namedType) && state.root.entityType) {
+      for (const field of Object.values(state.root.entityType.getFields())) {
+        pathWalker(
+          state,
+          { type: state.root.entityType, field },
+          { type: protobufType },
+          [{ gql, protobuf }]
         );
       }
     }
+    return;
   }
 
-  return errors;
-}
+  const gqlFieldType = getNamedType(gql.field.type);
 
-/**
- * @param {import("./typings.js").PathPart[]} path
- * @param {import("@grpc/proto-loader").MethodDefinition<*,*>} rpc
- * @param {string} rpcName
- * @param {ProtoService} service
- * @param {GraphQLSchema} schema
- * @param {string | undefined} dig
- * @returns {{ ok: boolean; errors?: any[] }}
- */
-function validateOutputFromFetchRoot(path, rpc, rpcName, service, schema, dig) {
-  let currentMessage = rpc.responseType.type;
+  const { grpc__renamed, grpc__wrap, grpc__fetch } = getDirectives(
+    state.schema,
+    gql.field
+  );
 
-  if (dig) {
-    for (const fieldName of dig.split(".")) {
-      const messageField = currentMessage.field.find(
-        (/** @type {{ name: string; }} */ f) => f.name === fieldName
-      );
-      if (!messageField) {
-        return {
-          ok: false,
-          errors: [
-            makeInvalidFetchDigError({
-              operationType: path[0].parentType,
-              fieldName: path[0].field,
-              dig,
-              rpc: rpcName,
-              returnType: rpc.responseType.type.name,
-              path: path.slice(0, 1),
-            }),
-          ],
-        };
-      }
-      currentMessage = findTypeForField(messageField, currentMessage, service);
+  if (grpc__fetch) {
+    const key = `${gql.type.name}.${gql.field.name}`;
+    if (!state.fetchRootParents.has(key)) {
+      state.fetchRootParents.set(key, new Set());
     }
+    state.fetchRootParents.get(key)?.add(protobuf.type.name);
+    return;
   }
 
-  for (const part of path.slice(1)) {
-    const messageField = currentMessage.field.find(
-      (/** @type {{ name: string; }} */ f) => f.name === part.rpcName
+  const isRecursive = path.some(
+    (part) => part.gql.type.name === gqlFieldType.name
+  );
+  if (isRecursive) {
+    if (!isNullableType(gql.field.type)) {
+      state.errors.push(
+        makeNonNullableRecursiveFieldError({
+          parentType: gql.type.name,
+          fieldName: gql.field.name,
+          fieldType: gql.field.type,
+          path: { root: state.root, steps: [...path, { gql, protobuf }] },
+        })
+      );
+    }
+    return;
+  }
+
+  // if wrapped, dig and recurse
+  if (grpc__wrap) {
+    for (const { gql: childField, proto } of grpc__wrap) {
+      if (isObjectType(gqlFieldType)) {
+        const child = gqlFieldType.getFields()[childField];
+        if (!child) {
+          state.errors.push(
+            makeWrappedFieldNotFoundError({
+              childType: gqlFieldType.name,
+              fieldName: childField,
+              parentType: gql.type.name,
+              protoFieldName: proto,
+              path: { root: state.root, steps: [...path, { gql, protobuf }] },
+            })
+          );
+        } else {
+          pathWalker(
+            state,
+            { type: gqlFieldType, field: child },
+            { type: protobuf.type, fieldName: proto },
+            path
+          );
+        }
+      }
+    }
+    return;
+  }
+
+  const protobufFieldName =
+    /* wrapped */ protobuf.fieldName ??
+    /* renamed */ grpc__renamed?.from ??
+    /* matches */ gql.field.name;
+
+  const protobufField = protobuf.type.field.find(
+    (f) => f.name === protobufFieldName
+  );
+
+  if (!protobufField) {
+    state.errors.push(
+      makeMissingFieldError({
+        parentType: protobuf.type.name,
+        fieldName: protobufFieldName,
+        path: { root: state.root, steps: [...path, { gql, protobuf }] },
+      })
+    );
+    return;
+  }
+
+  const isList =
+    isListType(gql.field.type) ||
+    (isNonNullType(gql.field.type) && isListType(gql.field.type.ofType));
+  if (protobufField.label === "LABEL_REPEATED" && !isList) {
+    state.errors.push(
+      makeProtobufIsListError({
+        gqlParentType: gql.type.name,
+        gqlFieldName: gql.field.name,
+        protobufParentType: protobuf.type.name,
+        protobufFieldName,
+        protobufFieldLabel: protobufField.label,
+        path: { root: state.root, steps: [...path, { gql, protobuf }] },
+      })
+    );
+  } else if (protobufField.label !== "LABEL_REPEATED" && isList) {
+    state.errors.push(
+      makeProtobufIsNotListError({
+        gqlParentType: gql.type.name,
+        gqlFieldName: gql.field.name,
+        protobufParentType: protobuf.type.name,
+        protobufFieldName,
+        protobufFieldLabel: protobufField.label,
+        path: { root: state.root, steps: [...path, { gql, protobuf }] },
+      })
+    );
+  }
+
+  if (isScalarType(gqlFieldType)) {
+    if (!SCALAR_PROTO_MAP[gqlFieldType.name]?.has(protobufField.type)) {
+      state.errors.push(
+        makeIncorrectTypeError({
+          gqlParentType: gql.type.name,
+          gqlFieldName: gql.field.name,
+          gqlType: gql.field.type.toString(),
+          protoParentType: protobuf.type.name,
+          protoFieldName: protobufFieldName,
+          protoType: protobufField.type,
+          path: { root: state.root, steps: [...path, { gql, protobuf }] },
+        })
+      );
+    }
+    return;
+  }
+
+  if (isEnumType(gqlFieldType)) {
+    const protoEnum = state.service.getEnumType(
+      protobufField.typeName,
+      protobuf.type
     );
 
-    if (!messageField)
-      return {
-        ok: false,
-        errors: [
-          makeMissingFieldError({
-            parentType: currentMessage.name,
-            fieldName: part.rpcName,
-            path,
-          }),
-        ],
-      };
+    // TODO
+    if (!protoEnum) throw new Error(`missing protobuf enum ${protobuf.type}`);
 
-    if (part.isRecursive) {
-      return { ok: true }; // TODO validate is null and type matches
-    }
-
-    if (part.isLeaf) {
-      if (messageField.type === "TYPE_ENUM") {
-        const protoEnum =
-          service.getNestedEnum(messageField.typeName, currentMessage) ??
-          service.getType(messageField.typeName);
-
-        const graphQLEnum = schema.getType(part.type);
-
-        if (!isEnumType(graphQLEnum)) {
-          throw new Error(`GraphQLEnum \`${part.type}\` not found`);
-        }
-
-        return enumsAreCompatible(graphQLEnum, protoEnum, path);
-      } else if (SCALAR_PROTO_MAP[part.type]?.has(messageField.type)) {
-        return { ok: true };
-      } else {
-        return {
-          ok: false,
-          errors: [
-            makeIncorrectTypeError({
-              gqlParentType: part.parentType,
-              gqlFieldName: part.field,
-              gqlType: part.type,
-              protoParentType: currentMessage.name,
-              protoFieldName: messageField.name,
-              protoType: messageField.type,
-              path,
-            }),
-          ],
-        };
-      }
-    }
-
-    currentMessage = findTypeForField(messageField, currentMessage, service);
+    const { errors } = enumsAreCompatible(gqlFieldType, protoEnum, {
+      root: state.root,
+      steps: [...path, { gql, protobuf }],
+    });
+    state.errors.push(...(errors ?? []));
+    return;
   }
 
-  return { ok: true };
+  const nextProtobufType = findTypeForField(
+    protobufField,
+    protobuf.type,
+    state.service
+  );
+
+  if (!nextProtobufType) {
+    throw new Error(`missing protobuf type for field ${protobufField.name}`);
+  }
+
+  // for each gql field, recurse
+  if (isObjectType(gqlFieldType)) {
+    for (const field of Object.values(gqlFieldType.getFields())) {
+      pathWalker(
+        state,
+        { type: gqlFieldType, field },
+        { type: nextProtobufType },
+        [...path, { gql, protobuf }]
+      );
+    }
+  }
 }
 
 /**
  * @param {GraphQLEnumType} graphQLEnum
- * @param {import("@grpc/proto-loader").EnumTypeDefinition} protoEnum
- * @param {import("./typings.js").PathPart[]} path
+ * @param {import("@grpc/proto-loader").EnumType} protoEnum
+ * @param {import("./typings.js").Path} path
  */
 export function enumsAreCompatible(graphQLEnum, protoEnum, path) {
   const errors = [];
@@ -502,4 +519,358 @@ export function enumsAreCompatible(graphQLEnum, protoEnum, path) {
   } else {
     return { ok: true };
   }
+}
+
+/**
+ * @param {{
+ *  root: import("./typings").FetchRoot<any>;
+ *  path: import("./typings").Path;
+ *  rpc: import("@grpc/proto-loader").MethodDefinition<*,*>;
+ *  schema: GraphQLSchema;
+ *  service: ProtoService;
+ *  fetchRootParents: Map<string, Set<string>>
+ * }} state
+ */
+function validateFetchRootArguments({
+  root,
+  path,
+  schema,
+  rpc,
+  service,
+  fetchRootParents,
+}) {
+  /** @type {import("./typings").ValidationError[]} */
+  const errors = [];
+
+  const ignoredDataloaderArg =
+    root.kind === "BATCH_FETCH" && root.key.startsWith("$args")
+      ? root.key.replace("$args.", "")
+      : undefined;
+
+  // _entities has a special representations argument that will never match
+  // any protobuf request objects
+  if (!root.entityType) {
+    const rpcRequestFields = rpc.requestType.type.field;
+
+    for (const arg of root.field.args) {
+      if (arg.name === ignoredDataloaderArg) continue;
+
+      const { grpc__renamed } = getDirectives(schema, arg);
+      let protobufFieldName = grpc__renamed?.from ?? arg.name;
+
+      const protobufField = rpcRequestFields.find(
+        (f) => f.name === protobufFieldName
+      );
+
+      if (!protobufField) {
+        errors.push(
+          makeIncorrectArgumentError({
+            operationType: root.parent.name,
+            fieldName: root.field.name,
+            argName: arg.name,
+            renamedArgName: grpc__renamed?.from,
+            rpc: root.rpcName,
+            requestType: rpc.requestType.type.name,
+            path,
+          })
+        );
+      } else if (isProtoScalar(protobufField.type)) {
+        const namedType = getNamedType(arg.type);
+
+        if (!SCALAR_PROTO_MAP[namedType.name]?.has(protobufField.type)) {
+          errors.push(
+            makeIncorrectArgumentTypeError({
+              operationType: root.parent.name,
+              fieldName: root.field.name,
+              argName: arg.name,
+              renamedArgName: grpc__renamed?.from,
+              argType: namedType.name,
+              rpc: root.rpcName,
+              returnType: rpc.requestType.type.name,
+              protoField: protobufFieldName,
+              protoType: protobufField.type,
+              path,
+            })
+          );
+        }
+      }
+
+      // TODO composite argument types
+    }
+  }
+
+  errors.push(
+    ...validateFetchRootInputMaps({
+      root,
+      schema,
+      rpc,
+      service,
+      fetchRootParents,
+      path,
+    })
+  );
+
+  errors.push(
+    ...validateDataloaderArgs({
+      root,
+      fetchRootParents,
+      path,
+      schema,
+      service,
+      rpc,
+    })
+  );
+
+  return errors;
+}
+
+/**
+ * @param {{
+ *  root: import("./typings").FetchRoot<any>;
+ *  path: import("./typings").Path;
+ *  schema: GraphQLSchema;
+ *  rpc: import("@grpc/proto-loader").MethodDefinition<*,*>;
+ *  service: ProtoService;
+ *  fetchRootParents: Map<string, Set<string>>;
+ * }} state
+ */
+function validateFetchRootInputMaps({
+  root,
+  path,
+  schema,
+  rpc,
+  service,
+  fetchRootParents,
+}) {
+  /** @type {import("./typings").ValidationError[]} */
+  const errors = [];
+  if (root.kind !== "FETCH" || !root.mapArguments) return errors;
+
+  const rpcRequestFields = rpc.requestType.type.field;
+
+  for (const { sourceField, arg } of root.mapArguments) {
+    const messageField = rpcRequestFields.find((f) => f.name === arg);
+    if (!messageField) {
+      errors.push(
+        makeInputMapMissingProtoFieldError({
+          parentName: root.parent.name,
+          fieldName: root.field.name,
+          gql: sourceField, // TODO
+          proto: arg, // TODO
+          rpcName: root.rpcName,
+          requestType: rpc.requestType.type.name,
+          path,
+        })
+      );
+    }
+
+    // the "source" passed to the resolver will be the original
+    // protobuf message, which is good because we want access to
+    // the original data, especially if some fields (like foreign keys)
+    // are not exposed in graphql
+    const fetchRootParentKey = `${root.parent.name}.${root.field.name}`;
+    const possibleSourceMessageTypesNames =
+      fetchRootParents.get(fetchRootParentKey) ?? new Set();
+
+    const possibleSourceMessageTypes = Array.from(
+      possibleSourceMessageTypesNames
+    )
+      .map((name) => service.getMessageType(name))
+      .filter(isMessageType);
+
+    // the field must exist on every protobuf type that we may
+    // encounter from various paths to this fetch root
+    const fieldExistsOnProtobuf = possibleSourceMessageTypes.every((proto) =>
+      proto.field.find((f) => f.name === sourceField)
+    );
+
+    if (!fieldExistsOnProtobuf) {
+      errors.push(
+        makeInputMapMissingGqlFieldError({
+          parentName: root.parent.name,
+          fieldName: root.field.name,
+          gql: sourceField, // TODO
+          proto: arg, // TODO
+          rpcName: root.rpcName,
+          requestType: rpc.requestType.type.name,
+          path,
+        })
+      );
+    }
+
+    if (messageField && fieldExistsOnProtobuf) {
+      const protobufFieldTypes = possibleSourceMessageTypes
+        .flatMap((proto) => proto.field.filter((f) => f.name === sourceField))
+        .map((field) => field.type);
+      const uniqueTypes = Array.from(new Set(protobufFieldTypes));
+
+      if (uniqueTypes.length > 1) throw new Error("what do we do here?");
+
+      if (isProtoScalar(messageField.type)) {
+        if (uniqueTypes[0] !== messageField.type) {
+          errors.push(
+            // TODO fix this message!
+            makeInputMapMismatchedTypesError({
+              parentName: root.parent.name,
+              fieldName: root.field.name,
+              gql: sourceField, // TODO
+              gqlType: uniqueTypes[0],
+              proto: arg, // TODO
+              protoType: messageField.type,
+              rpcName: root.rpcName,
+              requestType: rpc.requestType.type.name,
+              path,
+            })
+          );
+        }
+      } else {
+        throw new Error(
+          "mapping to object types with @grpc__fetch(mapArguments:) is not supported"
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * @param {{
+ *  root: import("./typings").FetchRoot<any>;
+ *  fetchRootParents:Map<string, Set<string>>;
+ *  path: import("./typings").Path;
+ *  schema: GraphQLSchema;
+ *  service: ProtoService;
+ *  rpc: import("@grpc/proto-loader").MethodDefinition<*,*>;
+ * }} params
+ */
+function validateDataloaderArgs({
+  root,
+  fetchRootParents,
+  path,
+  schema,
+  service,
+  rpc,
+}) {
+  if (root.kind !== "BATCH_FETCH") return [];
+
+  /** @type {import("./typings").ValidationError[]} */
+  const errors = [];
+
+  if (root.key.startsWith("$source.")) {
+    const sourceField = root.key.replace("$source.", "");
+    // the "source" passed to the resolver will be the original
+    // protobuf message, which is good because we want access to
+    // the original data, especially if some fields (like foreign keys)
+    // are not exposed in graphql
+    const fetchRootParentKey = `${root.parent.name}.${root.field.name}`;
+    const possibleSourceMessageTypesNames =
+      fetchRootParents.get(fetchRootParentKey) ?? new Set();
+
+    const possibleSourceMessageTypes = Array.from(
+      possibleSourceMessageTypesNames
+    )
+      .map((name) => service.getMessageType(name))
+      .filter(isMessageType);
+
+    // the field must exist on every protobuf type that we may
+    // encounter from various paths to this fetch root
+    const fieldExistsOnProtobuf = possibleSourceMessageTypes.every((proto) =>
+      proto.field.find((f) => f.name === sourceField)
+    );
+
+    if (!fieldExistsOnProtobuf) {
+      errors.push(
+        makeDataloaderIncorrectSourceKeyError({
+          key: sourceField,
+          path,
+          sources: Array.from(possibleSourceMessageTypesNames),
+        })
+      );
+    }
+  } else if (root.key.startsWith("$args.")) {
+    // compare against _entities(representation)
+    if (root.entityType) {
+      let { key } = getDirectives(schema, root.entityType);
+
+      if (!key) {
+        throw new Error("entity must have a @key"); // TODO
+      } else {
+        key = Array.isArray(key) ? key : [key]; // NOTE: will be repeatable in a future version
+        const keyArg = root.key.replace("$args.", "");
+        const keyMatches = key.some(
+          (/** @type {{ fields: string; }} */ key) => key.fields === keyArg
+        );
+        if (!keyMatches) {
+          errors.push(
+            makeDataloaderIncorrectEntityKeyError({
+              keyArg,
+              keyFields: key.map(
+                (/** @type {{ fields: any; }} */ key) => key.fields
+              ),
+              path,
+            })
+          );
+        }
+      }
+    } else {
+      const argExists = root.field.args.some(
+        (arg) => arg.name === root.key.replace("$args.", "")
+      );
+      if (!argExists) {
+        errors.push(
+          makeDataloaderIncorrectArgKeyError({
+            key: root.key,
+            parentName: root.parent.name,
+            fieldName: root.field.name,
+            path,
+          })
+        );
+      }
+    }
+  } else {
+    errors.push(makeDataloaderIncorrectKeyFormatError({ path, key: root.key }));
+  }
+
+  // ensure that root.listArgument exists on the rpc.requestType.type.field
+  const listArgument = rpc.requestType.type.field.some(
+    (f) => f.name === root.listArgument
+  );
+  if (!listArgument) {
+    errors.push(
+      makeDataloaderIncorrectListArgumentError({
+        path,
+        listArgument: root.listArgument,
+        requestType: rpc.requestType.type.name,
+      })
+    );
+  }
+
+  // responseType = rpc.responseType.type or dig into the response message
+  // ensure that the responseKey exists on the response type
+  if (root.responseKey) {
+    let responseType = rpc.responseType.type;
+    if (root.dig) {
+      const type = service.digFromType(responseType, root.dig);
+      if (type) {
+        responseType = type;
+        // if null, this will be caught in walkPathsFromRoot
+      }
+    }
+
+    const validResponseKey = responseType.field.some(
+      (f) => f.name === root.responseKey
+    );
+    if (!validResponseKey) {
+      errors.push(
+        makeDataloaderIncorrectResponseKeyError({
+          path,
+          responseKey: root.responseKey,
+          responseType: responseType.name,
+        })
+      );
+    }
+  }
+
+  return errors;
 }

@@ -1,6 +1,6 @@
 import { GraphQLEnumType } from "graphql";
 import { makeGrpcApplied } from "./directives.js";
-import { ProtoService } from "./protos.js";
+import { grpcServiceEnumName, ProtoService } from "./protos.js";
 
 /**
  * @param {{ name: string; protoFile: string; serviceName: string; address: string }[]} services
@@ -23,7 +23,7 @@ export function makeGrpcService(services) {
   });
 
   return new GraphQLEnumType({
-    name: "grpc__Service",
+    name: grpcServiceEnumName,
     values: Object.fromEntries(values),
   });
 }
@@ -37,12 +37,12 @@ export function isProtoEnum(typeName) {
 
 /**
  * @param {string} name
- * @param {{ enumType: any[]; name: string; }} parentType
+ * @param {import("@grpc/proto-loader").MessageType} parentType
  * @param {ProtoService} service
  */
 export function makeEnum(name, parentType, service) {
   const nestedEnum = parentType.enumType.find((t) => t.name === name);
-  const enumType = nestedEnum ?? service.getType(name);
+  const enumType = service.getEnumType(name, parentType);
 
   if (!enumType) throw new Error(`Enum "${name}" missing`);
 

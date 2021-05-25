@@ -1,58 +1,14 @@
 import { buildSchema, graphql } from "graphql";
-import { makeFieldResolver } from "../src/execute";
-import { findServices } from "../src/lib";
-import { run } from "./__fixtures__/posts";
+import { makeFieldResolver } from "../src/execute.js";
+import { loadString } from "../src/graphql.js";
+import { findServices } from "../src/protos.js";
+import { validate } from "../src/validate.js";
+import { run } from "./__fixtures__/posts.js";
+import { print } from "../src/errors.js";
 
 test("dataloader", async () => {
-  const schema = buildSchema(`#graphql
-  schema
-    @coreExperimental(feature: "https://notareal.spec/core/v0.1")
-    @coreExperimental(feature: "https://notareal.spec/grpc/v0.1") {
-    query: Query
-  }
-
-  directive @coreExperimental(feature: String!, as: String) repeatable on SCHEMA
-
-  directive @grpc(
-    protoFile: String!
-    serviceName: String!
-    address: String!
-  ) on ENUM_VALUE
-
-  directive @grpc__rename(
-    to: String!
-  ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
-
-  directive @grpc__wrap(
-    gql: String!
-    proto: String!
-  ) repeatable on FIELD_DEFINITION
-
-  directive @grpc__fetch(
-    service: grpc__Service!
-    rpc: String!
-    dig: String
-    input: [String!]
-  ) on FIELD_DEFINITION
-
-  directive @grpc__fetchBatch(
-    service: grpc__Service!
-    rpc: String!
-    key: String!
-    listArgument: String!
-    responseKey: String
-    dig: String
-  ) on FIELD_DEFINITION
-
-  enum grpc__Service {
-    POSTS
-      @grpc(
-        protoFile: "test/__fixtures__/posts.proto"
-        serviceName: "Posts"
-        address: "localhost:50002"
-      )
-  }
-
+  const schema = buildSchema(
+    generateSdl(`#graphql
   type Query {
     posts: [Post] @grpc__fetch(service: POSTS, rpc: "ListPosts", dig: "posts")
   }
@@ -61,13 +17,15 @@ test("dataloader", async () => {
     id: ID
     title: String
     author: Author 
-      @grpc__fetchBatch(
-        service: POSTS, 
-        rpc: "BatchGetAuthors", 
-        key: "$source.author_id"
-        listArgument: "ids"
+      @grpc__fetch(
+        service: POSTS
+        rpc: "BatchGetAuthors"
         dig: "authors"
-        responseKey: "id"
+        dataloader: {
+          key: "$source.author_id"
+          listArgument: "ids"
+          responseKey: "id"
+        }
       )
   }
 
@@ -75,8 +33,10 @@ test("dataloader", async () => {
     id: ID
     name: String
   }
-  `);
-  const services = findServices(schema);
+  `)
+  );
+
+  const services = findServices(schema, { cwd: process.cwd() });
 
   const [requests, stopGrpc] = await run(50002);
 
@@ -123,15 +83,270 @@ test("dataloader", async () => {
 
   expect(requests).toMatchInlineSnapshot(`
     Array [
-      Object {},
-      Object {
-        "ids": Array [
-          "1",
-          "2",
-        ],
-      },
+      Array [
+        "ListPosts",
+        Object {},
+      ],
+      Array [
+        "BatchGetAuthors",
+        Object {
+          "ids": Array [
+            "1",
+            "2",
+          ],
+        },
+      ],
     ]
   `);
 
   await stopGrpc();
 });
+
+test("dataloader args", async () => {
+  const schema = buildSchema(
+    generateSdl(`#graphql
+  type Query {
+    post(id: ID!): Post 
+      @grpc__fetch(service: POSTS, rpc: "BatchGetPosts", dig: "posts", dataloader: {
+        key: "$args.id"
+        listArgument: "ids"
+        responseKey: "id"
+      })
+  }
+
+  type Post {
+    id: ID
+    title: String
+  }
+  `)
+  );
+
+  const services = findServices(schema, { cwd: process.cwd() });
+
+  const [requests, stopGrpc] = await run(50002);
+
+  const result = await graphql({
+    schema,
+    source: `{ 
+      one: post(id: "1") {
+        title
+      }
+      two: post(id: "2") {
+        title
+      }
+    }`,
+    fieldResolver: makeFieldResolver(services),
+    contextValue: {},
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    Object {
+      "data": Object {
+        "one": Object {
+          "title": "Post 1",
+        },
+        "two": Object {
+          "title": "Post 2",
+        },
+      },
+    }
+  `);
+
+  expect(requests).toMatchInlineSnapshot(`
+    Array [
+      Array [
+        "BatchGetPosts",
+        Object {
+          "ids": Array [
+            "1",
+            "2",
+          ],
+        },
+      ],
+    ]
+  `);
+
+  await stopGrpc();
+});
+
+describe("validation", () => {
+  test("valid schema", async () => {
+    const sdl = generateSdl(`#graphql
+  type Query {
+    posts: [Post] @grpc__fetch(service: POSTS, rpc: "ListPosts", dig: "posts")
+    post(id: ID!): Post 
+      @grpc__fetch(service: POSTS, rpc: "BatchGetPosts", dig: "posts", dataloader: {
+        key: "$args.id"
+        listArgument: "ids"
+        responseKey: "id"
+      })
+  }
+
+  type Post {
+    id: ID
+    title: String
+    author: Author 
+      @grpc__fetch(
+        service: POSTS
+        rpc: "BatchGetAuthors"
+        dig: "authors"
+        dataloader: {
+          key: "$source.author_id"
+          listArgument: "ids"
+          responseKey: "id"
+        }
+      )
+  }
+
+  type Author {
+    id: ID
+    name: String
+  }`);
+
+    expect(
+      validate(loadString(sdl, { federated: true, cwd: process.cwd() })).map(
+        print
+      )
+    ).toEqual([]);
+  });
+
+  test("incorrect dataloader params", async () => {
+    const sdl = generateSdl(`#graphql
+      type Query {
+        posts: [Post] @grpc__fetch(service: POSTS, rpc: "ListPosts", dig: "posts")
+      }
+
+      type Post {
+        id: ID
+        title: String
+        author: Author 
+          @grpc__fetch(
+            service: POSTS
+            rpc: "BatchGetAuthors"
+            dig: "authors"
+            dataloader: {
+              key: "$source.not_a_real_field"
+              listArgument: "not_on_request_type"
+              responseKey: "not_on_message"
+            }
+          )
+      }
+
+      type Author {
+        id: ID
+        name: String
+      }
+    `);
+
+    expect(
+      validate(loadString(sdl, { federated: true, cwd: process.cwd() })).map(
+        print
+      )
+    ).toMatchInlineSnapshot(`
+      Array [
+        "[ERROR] Dataloader cache key not_a_real_field not found on source message Post
+              Post.author:Author calls Posts/BatchGetAuthors
+      ",
+        "[ERROR] Field not_on_request_type not found on BatchGetAuthorsRequest for dataloader listArgument
+              Post.author:Author calls Posts/BatchGetAuthors
+      ",
+        "[ERROR] Response key not_on_message not found on message Author
+              Post.author:Author calls Posts/BatchGetAuthors
+      ",
+      ]
+    `);
+  });
+
+  test("incorrect dataloader params ($args)", async () => {
+    const sdl = generateSdl(`#graphql
+      type Query {
+        post(id: ID!): Post 
+          @grpc__fetch(service: POSTS, rpc: "BatchGetPosts", dig: "posts", dataloader: {
+            key: "$args.not_a_real_field"
+            listArgument: "ids"
+            responseKey: "id"
+          })
+      }
+
+      type Post {
+        id: ID
+        title: String
+      }
+
+    `);
+
+    expect(
+      validate(loadString(sdl, { federated: true, cwd: process.cwd() })).map(
+        print
+      )
+    ).toMatchInlineSnapshot(`
+      Array [
+        "[ERROR] Argument id on Query.post does not exist on rpc BatchGetPosts request type BatchGetPostsRequest
+              Query.post:Post calls Posts/BatchGetPosts
+      ",
+        "[ERROR] Dataloader cache key $args.not_a_real_field not found on in arguments for Query.post
+              Query.post:Post calls Posts/BatchGetPosts
+      ",
+      ]
+    `);
+  });
+});
+
+/**
+ * @param {string} additional
+ */
+function generateSdl(additional) {
+  return `#graphql
+  directive @grpc(
+    protoFile: String!
+    serviceName: String!
+    address: String!
+    metadata: [grpc__Metadata!]
+  ) on ENUM_VALUE
+
+  input grpc__Metadata {
+    name: String!
+    value: String
+    valueFrom: String
+  }
+
+  directive @grpc__renamed(
+    from: String!
+  ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
+
+  directive @grpc__wrap(
+    gql: String!
+    proto: String!
+  ) repeatable on FIELD_DEFINITION
+
+  directive @grpc__fetch(
+    service: grpc__Service!
+    rpc: String!
+    dig: String
+    mapArguments: [grpc__InputMap!]
+    dataloader: grpc__Dataloader
+  ) on FIELD_DEFINITION | OBJECT
+
+  input grpc__InputMap {
+    sourceField: String!
+    arg: String!
+  }
+
+  input grpc__Dataloader {
+    key: String!
+    listArgument: String!
+    responseKey: String
+  }
+
+  enum grpc__Service {
+    POSTS
+      @grpc(
+        protoFile: "test/__fixtures__/posts.proto"
+        serviceName: "Posts"
+        address: "localhost:50002"
+      )
+  }
+
+  ${additional}
+  `;
+}

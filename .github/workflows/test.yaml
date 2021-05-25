@@ -1,0 +1,18 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["*"]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14.16.1
+      - run: npm install -g yarn
+      - run: yarn install --frozen-lockfile --no-progress
+      - run: yarn test
+      - run: yarn tsc

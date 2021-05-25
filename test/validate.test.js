@@ -1,24 +1,29 @@
-import { generate } from "../src/generate";
-import { validate } from "../src/validate";
+import { generate } from "../src/generate.js";
+import { validate } from "../src/validate.js";
 import { readFileSync } from "fs";
+import { print } from "../src/errors.js";
+import { loadString } from "../src/graphql.js";
 
 test("generate -> validate", () => {
-  const generated = generate([
-    {
-      serviceName: "KitchenSink",
-      address: "localhost:50051",
-      name: "KITCHEN_SINK",
-      protoFile: "test/__fixtures__/kitchensink.proto",
-    },
-  ]);
+  const generated = generate(
+    [
+      {
+        serviceName: "KitchenSink",
+        address: "localhost:50051",
+        name: "KITCHEN_SINK",
+        protoFile: "test/__fixtures__/kitchensink.proto",
+        metadata: [],
+      },
+    ],
+    { cwd: process.cwd() }
+  );
 
-  expect(validate(generated)).toEqual([]);
+  expect(validate(loadString(generated, { cwd: process.cwd() }))).toEqual([]);
 });
 
 test("wrong field name", () => {
   const sdl = `#graphql
     ${readFileSync("test/__fixtures__/core.graphql")}
-    type Mutation { dummy: Int }
 
     type Query {
       one: Message! @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
@@ -31,20 +36,15 @@ test("wrong field name", () => {
     }
   `;
 
-  expect(validate(sdl)).toMatchInlineSnapshot(`
+  expect(validate(loadString(sdl, { cwd: process.cwd() })).map(print))
+    .toMatchInlineSnapshot(`
     Array [
-      Object {
-        "code": "MissingField",
-        "key": "Message.non_existant",
-        "message": "Message.non_existant not found",
-        "path": "Query.one -> Message.non_existant",
-      },
-      Object {
-        "code": "MissingField",
-        "key": "Message.non_existant",
-        "message": "Message.non_existant not found",
-        "path": "Query.two -> Message.non_existant",
-      },
+      "[ERROR] Message.non_existant not found
+            Query.one:Message! calls KitchenSink/DoSomething
+             ⌙ Message.non_existant -> Message
+            Query.two:Message! calls KitchenSink/DoSomething
+             ⌙ Message.non_existant -> Message
+    ",
     ]
   `);
 });
@@ -52,7 +52,6 @@ test("wrong field name", () => {
 test("wrong field type", () => {
   const sdl = `#graphql
     ${readFileSync("test/__fixtures__/core.graphql")}
-    type Mutation { dummy: Int }
 
     type Query {
       one: Message! @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
@@ -66,32 +65,21 @@ test("wrong field type", () => {
     }
   `;
 
-  expect(validate(sdl)).toMatchInlineSnapshot(`
+  expect(validate(loadString(sdl, { cwd: process.cwd() })).map(print))
+    .toMatchInlineSnapshot(`
     Array [
-      Object {
-        "code": "IncorrectType",
-        "key": "Message.field_int32",
-        "message": "Message.field_int32 returns a Float, but Message.field_int32 returns a TYPE_INT32",
-        "path": "Query.one -> Message.field_int32",
-      },
-      Object {
-        "code": "IncorrectType",
-        "key": "Message.field_bool",
-        "message": "Message.field_bool returns a Int, but Message.field_bool returns a TYPE_BOOL",
-        "path": "Query.one -> Message.field_bool",
-      },
-      Object {
-        "code": "IncorrectType",
-        "key": "Message.field_int32",
-        "message": "Message.field_int32 returns a Float, but Message.field_int32 returns a TYPE_INT32",
-        "path": "Query.two -> Message.field_int32",
-      },
-      Object {
-        "code": "IncorrectType",
-        "key": "Message.field_bool",
-        "message": "Message.field_bool returns a Int, but Message.field_bool returns a TYPE_BOOL",
-        "path": "Query.two -> Message.field_bool",
-      },
+      "[ERROR] Message.field_int32 returns a Float, but Message.field_int32 returns a TYPE_INT32
+            Query.one:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_int32 -> Message
+            Query.two:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_int32 -> Message
+    ",
+      "[ERROR] Message.field_bool returns a Int, but Message.field_bool returns a TYPE_BOOL
+            Query.one:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_bool -> Message
+            Query.two:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_bool -> Message
+    ",
     ]
   `);
 });
@@ -99,7 +87,6 @@ test("wrong field type", () => {
 test("mismatched enums", () => {
   const sdl = `#graphql
     ${readFileSync("test/__fixtures__/core.graphql")}
-    type Mutation { dummy: Int }
 
     type Query {
       one: Message! @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
@@ -122,32 +109,21 @@ test("mismatched enums", () => {
     }
   `;
 
-  expect(validate(sdl)).toMatchInlineSnapshot(`
+  expect(validate(loadString(sdl, { cwd: process.cwd() })).map(print))
+    .toMatchInlineSnapshot(`
     Array [
-      Object {
-        "code": "ExtranousEnumValue",
-        "key": "EnumOne.not_found",
-        "message": "EnumOne.not_found not found in Enum",
-        "path": "Query.one -> Message.field_enum",
-      },
-      Object {
-        "code": "MissingEnumValue",
-        "key": "EnumTwo.four",
-        "message": "EnumTwo is missing value NestedEnum.four",
-        "path": "Query.one -> Message.field_nested_enum",
-      },
-      Object {
-        "code": "ExtranousEnumValue",
-        "key": "EnumOne.not_found",
-        "message": "EnumOne.not_found not found in Enum",
-        "path": "Query.two -> Message.field_enum",
-      },
-      Object {
-        "code": "MissingEnumValue",
-        "key": "EnumTwo.four",
-        "message": "EnumTwo is missing value NestedEnum.four",
-        "path": "Query.two -> Message.field_nested_enum",
-      },
+      "[ERROR] EnumOne.not_found not found in Enum
+            Query.one:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_enum -> Message
+            Query.two:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_enum -> Message
+    ",
+      "[ERROR] EnumTwo is missing value NestedEnum.four
+            Query.one:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_nested_enum -> Message
+            Query.two:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_nested_enum -> Message
+    ",
     ]
   `);
 });
@@ -155,7 +131,6 @@ test("mismatched enums", () => {
 test("wrong dig path", () => {
   const sdl = `#graphql
     ${readFileSync("test/__fixtures__/core.graphql")}
-    type Mutation { dummy: Int }
 
     type Query {
       one: Message! 
@@ -167,14 +142,12 @@ test("wrong dig path", () => {
     }
   `;
 
-  expect(validate(sdl)).toMatchInlineSnapshot(`
+  expect(validate(loadString(sdl, { cwd: process.cwd() })).map(print))
+    .toMatchInlineSnapshot(`
     Array [
-      Object {
-        "code": "InvalidFetchDig",
-        "key": "Query.one",
-        "message": "Query.one cannot dig \`foo\` from rpc DoSomething return type Message",
-        "path": "Query.one",
-      },
+      "[ERROR] Query.one cannot dig \`foo\` from rpc DoSomething return type Message
+            Query.one:Message! calls KitchenSink/DoSomething
+    ",
     ]
   `);
 });
@@ -182,13 +155,12 @@ test("wrong dig path", () => {
 test("wrong arguments", () => {
   const sdl = `#graphql
     ${readFileSync("test/__fixtures__/core.graphql")}
-    type Mutation { dummy: Int }
 
     type Query {
       doSomething(
         wrong: String
-        renamedWrong: String @grpc__rename(to: "alsowrong")
-        renamedRight: String @grpc__rename(to: "field_string")
+        renamedWrong: String @grpc__renamed(from: "alsowrong")
+        renamedRight: String @grpc__renamed(from: "field_string")
       ): Message! 
         @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
     }
@@ -198,20 +170,15 @@ test("wrong arguments", () => {
     }
   `;
 
-  expect(validate(sdl)).toMatchInlineSnapshot(`
+  expect(validate(loadString(sdl, { cwd: process.cwd() })).map(print))
+    .toMatchInlineSnapshot(`
     Array [
-      Object {
-        "code": "IncorrectArgument",
-        "key": "Query.doSomething(wrong)",
-        "message": "Argument wrong on Query.doSomething does not exist on rpc DoSomething return type Message",
-        "path": "Query.doSomething",
-      },
-      Object {
-        "code": "IncorrectArgument",
-        "key": "Query.doSomething(renamedWrong)",
-        "message": "Argument alsowrong (renamed from renamedWrong) on Query.doSomething does not exist on rpc DoSomething return type Message",
-        "path": "Query.doSomething",
-      },
+      "[ERROR] Argument wrong on Query.doSomething does not exist on rpc DoSomething request type Message
+            Query.doSomething:Message! calls KitchenSink/DoSomething
+    ",
+      "[ERROR] Argument alsowrong (renamed from renamedWrong) on Query.doSomething does not exist on rpc DoSomething request type Message
+            Query.doSomething:Message! calls KitchenSink/DoSomething
+    ",
     ]
   `);
 });
@@ -219,7 +186,6 @@ test("wrong arguments", () => {
 test("wrong argument type", () => {
   const sdl = `#graphql
     ${readFileSync("test/__fixtures__/core.graphql")}
-    type Mutation { dummy: Int }
 
     type Query {
       doSomething(field_string: Int): Message! 
@@ -231,14 +197,12 @@ test("wrong argument type", () => {
     }
   `;
 
-  expect(validate(sdl)).toMatchInlineSnapshot(`
+  expect(validate(loadString(sdl, { cwd: process.cwd() })).map(print))
+    .toMatchInlineSnapshot(`
     Array [
-      Object {
-        "code": "IncorrectArgument",
-        "key": "Query.doSomething(field_string)",
-        "message": "Argument field_string:Int on Query.doSomething does not match the field_string:TYPE_STRING return type Message (DoSomething)",
-        "path": "Query.doSomething",
-      },
+      "[ERROR] Argument field_string:Int on Query.doSomething does not match the field_string:TYPE_STRING return type Message (DoSomething)
+            Query.doSomething:Message! calls KitchenSink/DoSomething
+    ",
     ]
   `);
 });
@@ -246,7 +210,6 @@ test("wrong argument type", () => {
 test("incorrect input map", () => {
   const sdl = `#graphql
     ${readFileSync("test/__fixtures__/core.graphql")}
-    type Mutation { dummy: Int }
 
     type Query {
       one: Message! 
@@ -256,40 +219,67 @@ test("incorrect input map", () => {
     type Message {
       field_string: String
       field_int32: Int
+      renamed_float: Float @grpc__renamed(from: "field_float")
       two: Message
         @grpc__fetch(
           service: KITCHEN_SINK, 
           rpc: "DoSomething", 
-          input: [
-            "$source.missingsource => field_string",
-            "$source.field_int32 => missingproto",
-            "$source.field_string => field_int32"
-            "$source.field_bool => field_bool" # field_bool is on proto, not graphql
+          mapArguments: [
+            { sourceField: "missingsource", arg: "field_string" }
+            { sourceField: "field_int32", arg: "missingproto" }
+            { sourceField: "field_string", arg: "field_int32" }
+            { sourceField: "field_bool", arg: "field_bool" } # this works: field_bool is on proto
+            { sourceField: "renamed_float", arg: "field_float" }
           ]
         )
     }
   `;
 
-  expect(validate(sdl)).toMatchInlineSnapshot(`
+  expect(validate(loadString(sdl, { cwd: process.cwd() })).map(print))
+    .toMatchInlineSnapshot(`
     Array [
-      Object {
-        "code": "InputMapMissingGqlField",
-        "key": "Message.two($source.missingsource => field_string)",
-        "message": "Message.two (calling rpc DoSomething) is trying to map the GraphQL field $source.missingsource to request type Message.field_string, but $source.missingsource doesn't exist",
-        "path": "Message.two",
-      },
-      Object {
-        "code": "InputMapMissingProtoField",
-        "key": "Message.two($source.field_int32 => missingproto)",
-        "message": "Message.two (calling rpc DoSomething) is trying to map the GraphQL field $source.field_int32 to request type Message.missingproto, but Message.missingproto doesn't exist",
-        "path": "Message.two",
-      },
-      Object {
-        "code": "InputMapIncorrectType",
-        "key": "Message.two($source.field_string => field_int32)",
-        "message": "Message.two (calling rpc DoSomething) is trying to map the GraphQL field $source.field_string:String request type Message.field_int32:TYPE_INT32",
-        "path": "Message.two",
-      },
+      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field missingsource to request type Message.field_string, but missingsource doesn't exist
+            Message.two:Message calls KitchenSink/DoSomething
+    ",
+      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field field_int32 to request type Message.missingproto, but Message.missingproto doesn't exist
+            Message.two:Message calls KitchenSink/DoSomething
+    ",
+      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field field_string:TYPE_STRING request type Message.field_int32:TYPE_INT32
+            Message.two:Message calls KitchenSink/DoSomething
+    ",
+      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field renamed_float to request type Message.field_float, but renamed_float doesn't exist
+            Message.two:Message calls KitchenSink/DoSomething
+    ",
+    ]
+  `);
+});
+
+test("list types", async () => {
+  const sdl = `#graphql
+    ${readFileSync("test/__fixtures__/core.graphql")}
+
+    type Query {
+      one(field_strings: String field_int32: [Int]): Message! 
+        @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
+    }
+
+    type Message {
+      field_strings: String
+      field_int32: [Int]
+    }
+  `;
+
+  expect(validate(loadString(sdl, { cwd: process.cwd() })).map(print))
+    .toMatchInlineSnapshot(`
+    Array [
+      "[ERROR] Message.field_strings is not a list, but Message.field_strings is LABEL_REPEATED
+            Query.one:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_strings -> Message
+    ",
+      "[ERROR] Message.field_int32 is a list, but Message.field_int32 is LABEL_OPTIONAL
+            Query.one:Message! calls KitchenSink/DoSomething
+             ⌙ Message.field_int32 -> Message
+    ",
     ]
   `);
 });

@@ -1,14 +1,14 @@
 import { run } from "./kitchensink.js";
 import { makeFieldResolver } from "../../src/execute.js";
 import { buildSchema, graphql } from "graphql";
-import { findServices } from "../../src/lib.js";
+import { findServices } from "../../src/protos.js";
 import { readFileSync } from "fs";
 
 (async () => {
   const schema = buildSchema(
     readFileSync("test/__fixtures__/kitchensink.graphql", "utf-8")
   );
-  const services = findServices(schema);
+  const services = findServices(schema, { cwd: process.cwd() });
 
   await run(50001);
 

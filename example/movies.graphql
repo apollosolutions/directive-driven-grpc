@@ -1,6 +1,13 @@
-type Movie @key(fields: "id") {
+type Movie
+  @key(fields: "id")
+  @grpc__fetch(
+    service: MOVIES
+    rpc: "BatchGetMovies"
+    dig: "movies"
+    dataloader: { key: "$args.id", listArgument: "ids", responseKey: "id" }
+  ) {
   id: ID!
-  name: String
+  title: String @grpc__renamed(from: "name")
   rating: Float
   status: MovieStatus
 
@@ -12,7 +19,7 @@ type Movie @key(fields: "id") {
     @grpc__fetch(
       service: MOVIES
       rpc: "GetCastForMovie"
-      input: { gql: "$source.id", proto: "movie_id" }
+      mapArguments: { sourceField: "id", arg: "movie_id" }
     )
 }
 
@@ -30,8 +37,8 @@ enum MovieStatus {
 
 type Query {
   movies(
-    first: Int @grpc__rename(to: "limit")
-    after: String @grpc__rename(to: "cursor")
+    first: Int @grpc__renamed(from: "limit")
+    after: String @grpc__renamed(from: "cursor")
   ): MovieConnection! @grpc__fetch(service: MOVIES, rpc: "ListMovies")
 
   movie(id: ID!): Movie
@@ -50,7 +57,7 @@ type Mutation {
 }
 
 type MovieConnection {
-  nodes: [Movie!]! @grpc__rename(to: "movies")
+  nodes: [Movie!]! @grpc__renamed(from: "movies")
   pageInfo: PageInfo! @grpc__wrap(proto: "cursor", gql: "endCursor")
 }
 
@@ -74,7 +81,7 @@ type DeleteMovieResponse {
 }
 
 type CastConnection {
-  nodes: [Person!]! @grpc__rename(to: "cast")
+  nodes: [Person!]! @grpc__renamed(from: "cast")
   pageInfo: PageInfo! @grpc__wrap(proto: "cursor", gql: "endCursor")
 }
 
@@ -82,14 +89,25 @@ directive @grpc(
   protoFile: String!
   serviceName: String!
   address: String!
+  metadata: [grpc__Metadata!]
 ) on ENUM_VALUE
+
+input grpc__Metadata {
+  name: String!
+  value: String
+  valueFrom: String
+}
 
 enum grpc__Service {
   MOVIES
     @grpc(
-      protoFile: "example/protos/service.proto"
+      protoFile: "protos/service.proto"
       serviceName: "com.example.Movies"
       address: "localhost:50001"
+      metadata: [
+        { name: "x-api-key", valueFrom: "req.headers.x-api-key" }
+        { name: "cluster", value: "movies" }
+      ]
     )
 }
 
@@ -97,28 +115,26 @@ directive @grpc__fetch(
   service: grpc__Service!
   rpc: String!
   dig: String
-  input: [grpc__InputMap!]
-) on FIELD_DEFINITION
+  mapArguments: [grpc__InputMap!]
+  dataloader: grpc__Dataloader
+) on FIELD_DEFINITION | OBJECT
 
 input grpc__InputMap {
-  gql: String!
-  proto: String!
+  sourceField: String!
+  arg: String!
 }
 
-directive @grpc__rename(
-  to: String!
+input grpc__Dataloader {
+  key: String!
+  listArgument: String!
+  responseKey: String
+}
+
+directive @grpc__renamed(
+  from: String!
 ) on OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
 
 directive @grpc__wrap(
   gql: String!
   proto: String!
 ) repeatable on FIELD_DEFINITION
-
-directive @coreExperimental(feature: String!, as: String) repeatable on SCHEMA
-
-schema
-  @coreExperimental(feature: "https://notareal.spec/core/v0.1")
-  @coreExperimental(feature: "https://notareal.spec/grpc/v0.1") {
-  query: Query
-  mutation: Mutation
-}

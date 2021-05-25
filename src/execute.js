@@ -8,7 +8,7 @@ import {
 } from "graphql";
 import { get } from "lodash-es";
 import Dataloader from "dataloader";
-import { ProtoService } from "./protos";
+import { ProtoService } from "./protos.js";
 
 /**
  * @param {Map<string, import("./protos").ProtoService>} services
@@ -16,56 +16,32 @@ import { ProtoService } from "./protos";
  */
 export function makeFieldResolver(services) {
   return async (source, args, ctx, info) => {
-    const { grpc__fetch, grpc__rename, grpc__wrap, grpc__fetchBatch } =
-      getFieldDirectives(info);
-
-    if (grpc__fetchBatch) {
-      const dataloaderName = getNamedType(info.returnType).name;
-      const dataloader = getDataloader(
+    if (isEntityQuery(info)) {
+      return resolveEntities(
+        source,
+        /** @type {import("./typings.js").EntityArgs} */ (args),
         ctx,
-        dataloaderName,
-        grpc__fetchBatch,
+        info,
         services
       );
-      return dataloader.load(
-        resolveDataloaderKey(source, args, grpc__fetchBatch)
-      );
     }
+
+    const { grpc__fetch, grpc__renamed, grpc__wrap } = getFieldDirectives(info);
 
     if (grpc__fetch) {
-      const { service, rpc, dig, input } = grpc__fetch;
-
-      applyArgumentRenames(info, args);
-
-      if (input) {
-        args = convertInputArgs(input, source);
-      }
-
-      const resp = await services.get(service)?.call(rpc, args);
-
-      if (dig) {
-        return get(resp, dig);
-      }
-
-      return resp;
+      return resolveFetch(source, args, ctx, info, grpc__fetch, services);
     }
 
-    if (grpc__rename) {
-      const { to } = grpc__rename;
-      return source[to];
+    if (grpc__renamed) {
+      const { from } = grpc__renamed;
+      return source[from];
     }
 
     if (grpc__wrap?.length > 0) {
-      /**
-       * @param {{ [key: string]: any }} wrapper
-       * @param {{ gql: string; proto: string; }} directive
-       * @returns {{ [key: string]: any }}
-       */
-      const reducer = (wrapper, { gql, proto }) =>
-        Object.assign(wrapper, {
-          [gql]: source[proto],
-        });
-      return grpc__wrap.reduce(reducer, {});
+      return Object.fromEntries(
+        /** @type {{ gql: string; proto: string }[]} */
+        (grpc__wrap).map(({ gql, proto }) => [gql, source[proto]])
+      );
     }
 
     const namedReturnType = getNamedType(info.returnType);
@@ -79,34 +55,136 @@ export function makeFieldResolver(services) {
 }
 
 /**
+ * @template TSource, TArgs, TContext
+ * @param {TSource} source
+ * @param {TArgs} args
+ * @param {TContext} ctx
+ * @param {import("graphql").GraphQLResolveInfo} info
+ * @param {import("./typings.js").FetchDirective} directive
+ * @param {Map<string, ProtoService>} services
+ * @param {string?} [dataloaderKey]
+ */
+async function resolveFetch(
+  source,
+  args,
+  ctx,
+  info,
+  directive,
+  services,
+  dataloaderKey
+) {
+  const {
+    service,
+    rpc,
+    dig,
+    mapArguments,
+    dataloader: dataloaderParams,
+  } = directive;
+
+  const grpcService = services.get(service);
+  if (!grpcService) throw new Error(`service ${service} not found`);
+
+  const call = (/** @type {any} */ args) => grpcService.call(rpc, args, ctx);
+
+  if (dataloaderParams) {
+    const dataloaderName = dataloaderKey ?? getNamedType(info.returnType).name;
+    const dataloader = getDataloader(ctx, dataloaderName, directive, call);
+    return dataloader.load(
+      resolveDataloaderKey(source, args, dataloaderParams)
+    );
+  }
+
+  applyArgumentRenames(info, args);
+
+  if (mapArguments) {
+    args = /** @type {TArgs} */ (convertInputArgs(mapArguments, source));
+  }
+
+  const resp = await call(args);
+
+  return dig ? get(resp, dig) : resp;
+}
+
+/**
+ * @param {import("graphql").GraphQLResolveInfo} info
+ */
+function isEntityQuery(info) {
+  return (
+    info.parentType === info.schema.getQueryType() &&
+    info.fieldName === "_entities"
+  );
+}
+
+/**
+ * @template {import("./typings.js").EntityArgs} TArgs
+ *
+ * @template TSource, TContext
+ * @param {TSource} source
+ * @param {TArgs} args
+ * @param {TContext} ctx
+ * @param {import("graphql").GraphQLResolveInfo} info
+ * @param {Map<string, ProtoService>} services
+ */
+function resolveEntities(source, args, ctx, info, services) {
+  return Promise.all(
+    args.representations.map((representation) => {
+      const { __typename } = representation;
+
+      const type = info.schema.getType(__typename);
+      if (!type) throw new Error(`${__typename} not found`);
+
+      const { grpc__fetch } = getDirectives(info.schema, type);
+      if (!grpc__fetch) return representation;
+
+      return resolveFetch(
+        source,
+        representation,
+        ctx,
+        info,
+        grpc__fetch,
+        services,
+        __typename // otherwise the key is _Entity
+      ).then((res) => ({ ...representation, ...res, __typename }));
+    })
+  );
+}
+
+/**
+ * Mutates args
  * @param {import("graphql").GraphQLResolveInfo} info
  * @param {{ [x: string]: any; }} args
  */
 function applyArgumentRenames(info, args) {
   const directives = getArgumentDirectives(info);
-  for (const [name, { grpc__rename }] of Object.entries(directives)) {
-    if (grpc__rename) {
-      const { to } = grpc__rename;
-      args[to] = args[name];
+
+  for (const [name, { grpc__renamed }] of Object.entries(directives)) {
+    if (grpc__renamed) {
+      const { from } = grpc__renamed;
+      args[from] = args[name];
       delete args[name];
+    }
+  }
+
+  const field = info.parentType.getFields()[info.fieldName];
+
+  for (const arg of field.args) {
+    const enumType = getNamedType(arg.type);
+    if (isEnumType(enumType)) {
+      const renames = reverseRenamedEnumValueMap(info.schema, enumType);
+      args[arg.name] = renames[args[arg.name]];
     }
   }
 }
 
 /**
- * @param {string[]} inputMaps
- * @param {any} source
+ * @template T
+ * @param {{ sourceField: string; arg: string; }[]} inputMaps
+ * @param {T} source
  */
 function convertInputArgs(inputMaps, source) {
-  const pairs = inputMaps.map((pair) =>
-    pair.split(/\s=>\s/).map((s) => s.trim())
+  return Object.fromEntries(
+    inputMaps.map(({ sourceField, arg }) => [arg, get(source, sourceField)])
   );
-
-  return pairs.reduce((acc, [gql, proto]) => {
-    return Object.assign(acc, {
-      [proto]: get({ $source: source }, gql),
-    });
-  }, {});
 }
 
 /**
@@ -142,9 +220,9 @@ function renamedEnumValueMap(schema, enumType) {
   /** @type {{ [key:string]: string }} */
   const map = {};
   for (const value of enumType.getValues()) {
-    const { grpc__rename } = getDirectives(schema, value);
-    if (grpc__rename) {
-      map[grpc__rename.to] = value.name;
+    const { grpc__renamed } = getDirectives(schema, value);
+    if (grpc__renamed) {
+      map[grpc__renamed.from] = value.name;
     } else {
       map[value.name] = value.name;
     }
@@ -152,16 +230,28 @@ function renamedEnumValueMap(schema, enumType) {
   return map;
 }
 
+/**
+ * @param {GraphQLSchema} schema
+ * @param {GraphQLEnumType} enumType
+ */
+function reverseRenamedEnumValueMap(schema, enumType) {
+  return Object.fromEntries(
+    Object.entries(renamedEnumValueMap(schema, enumType)).map(
+      ([proto, gql]) => [gql, proto]
+    )
+  );
+}
+
 const dataloaderWeakMap = new WeakMap();
 
 /**
  * @param {any} ctx
  * @param {string} dataloaderKey
- * @param {any} grpc__fetchBatch
- * @param {Map<string, ProtoService>} services
+ * @param {import("./typings.js").FetchDirective} directive
+ * @param {(_: any) => Promise<any>} call
  * @returns {Dataloader<*, *>}
  */
-function getDataloader(ctx, dataloaderKey, grpc__fetchBatch, services) {
+function getDataloader(ctx, dataloaderKey, directive, call) {
   if (!ctx) {
     throw new Error("You must set a context to use dataloaders");
   }
@@ -174,12 +264,13 @@ function getDataloader(ctx, dataloaderKey, grpc__fetchBatch, services) {
     dataloaderWeakMap.get(ctx).set(
       dataloaderKey,
       new Dataloader(async (keys) => {
-        const { service, rpc, dig, responseKey, listArgument } =
-          grpc__fetchBatch;
+        const { dig, dataloader } = directive;
+        const { responseKey, listArgument } =
+          /** @type {import("./typings.js").DataloaderParams} */ (dataloader);
 
         const args = { [listArgument]: keys };
 
-        let resp = await services.get(service)?.call(rpc, args);
+        let resp = await call(args);
 
         if (dig) {
           resp = get(resp, dig);
@@ -187,7 +278,8 @@ function getDataloader(ctx, dataloaderKey, grpc__fetchBatch, services) {
 
         if (responseKey) {
           return keys.map((key) =>
-            resp.find((item) => item[responseKey] === key)
+            /** @type {any[]} */
+            (resp).find((item) => item[responseKey] === key)
           );
         }
 
@@ -203,15 +295,9 @@ function getDataloader(ctx, dataloaderKey, grpc__fetchBatch, services) {
  *
  * @param {any} source
  * @param {any} args
- * @param {{ key: string }} grpc__fetchBatch
+ * @param {import("./typings.js").DataloaderParams} dataloaderParams
  * @returns {any}
  */
-function resolveDataloaderKey(source, args, grpc__fetchBatch) {
-  return get(
-    {
-      $source: source,
-      $args: args,
-    },
-    grpc__fetchBatch.key
-  );
+function resolveDataloaderKey(source, args, { key }) {
+  return get({ $source: source, $args: args }, key);
 }

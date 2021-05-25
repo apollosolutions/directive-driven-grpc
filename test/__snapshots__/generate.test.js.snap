@@ -1,23 +1,15 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
 exports[`kitchen sync 1`] = `
-"schema
-  @coreExperimental(feature: \\"https://notareal.spec/core/v0.1\\")
-  @coreExperimental(feature: \\"https://notareal.spec/grpc/v0.1\\") {
-  query: Query
-  mutation: Mutation
-}
-
-directive @coreExperimental(feature: String!, as: String) repeatable on SCHEMA
-
-directive @grpc(
+"directive @grpc(
   protoFile: String!
   serviceName: String!
   address: String!
+  metadata: [grpc__Metadata!]
 ) on ENUM_VALUE
 
-directive @grpc__rename(
-  to: String!
+directive @grpc__renamed(
+  from: String!
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
 
 directive @grpc__wrap(
@@ -29,8 +21,9 @@ directive @grpc__fetch(
   service: grpc__Service!
   rpc: String!
   dig: String
-  input: [String!]
-) on FIELD_DEFINITION
+  mapArguments: [grpc__InputMap!]
+  dataloader: grpc__Dataloader
+) on FIELD_DEFINITION | OBJECT
 
 enum grpc__Service {
   KITCHEN_SINK
@@ -129,6 +122,23 @@ input Message_NestedChildInput {
 input RecursiveInput {
   depth: Int
   recursive: RecursiveInput
+}
+
+input grpc__Metadata {
+  name: String!
+  value: String
+  valueFrom: String
+}
+
+input grpc__InputMap {
+  sourceField: String!
+  arg: String!
+}
+
+input grpc__Dataloader {
+  key: String!
+  listArgument: String!
+  responseKey: String
 }
 "
 `;

@@ -16,18 +16,31 @@ class TypeRecorder {
   #map = new Map();
   #seen = new Set();
 
+  /**
+   * @param {string} name
+   */
   markSeen(name) {
     this.#seen.add(name);
   }
 
+  /**
+   * @param {string} name
+   */
   hasSeen(name) {
     return this.#seen.has(name);
   }
 
+  /**
+   * @param {string} name
+   */
   get(name) {
     return this.#map.get(name);
   }
 
+  /**
+   * @param {string} name
+   * @param {import("graphql").GraphQLType} type
+   */
   add(name, type) {
     if (this.#map.has(name)) return;
     this.#map.set(name, type);
@@ -99,10 +112,11 @@ function createRequestArgs(requestType, service, acc) {
 }
 
 /**
- * @param {{ type: string; typeName: string; label: string; name: string; }} field
- * @param {{ enumType: any[]; name: string; }} parentType
+ * @param {import("@grpc/proto-loader").Field} field
+ * @param {import("@grpc/proto-loader").MessageType} parentType
  * @param {TypeRecorder} acc
  * @param {ProtoService} service
+ * @returns {import("graphql").GraphQLType}
  */
 function createInputType(field, parentType, service, acc) {
   const newType = (() => {
@@ -112,7 +126,10 @@ function createInputType(field, parentType, service, acc) {
 
     if (isProtoEnum(field.type)) {
       const newEnum = makeEnum(field.typeName, parentType, service);
-      if (acc.hasSeen(newEnum.name)) return acc.get(newEnum.name);
+      if (acc.hasSeen(newEnum.name)) {
+        const existingType = acc.get(newEnum.name);
+        if (existingType) return existingType;
+      }
       acc.add(newEnum.name, newEnum);
       return newEnum;
     }
@@ -120,14 +137,19 @@ function createInputType(field, parentType, service, acc) {
     const nestedType = parentType.nestedType.find(
       (t) => t.name === field.typeName
     );
-    const protoType = nestedType ?? service.getType(field.typeName);
-    if (!protoType) throw new Error(`Type "${field.typeName}" missing`); // TODO look for nested types
+    const protoType = service.getMessageType(field.typeName, parentType);
+    if (!protoType) throw new Error(`Type "${field.typeName}" missing`);
 
     const newInputTypeName = `${nestedType ? parentType.name + "_" : ""}${
       field.typeName
     }Input`;
+
     // stop recursion if we've seen this before
-    if (acc.hasSeen(newInputTypeName)) return acc.get(newInputTypeName);
+    if (acc.hasSeen(newInputTypeName)) {
+      const existingType = acc.get(newInputTypeName);
+      if (existingType) return existingType;
+    }
+
     acc.markSeen(newInputTypeName);
 
     const type = new GraphQLInputObjectType({
@@ -173,10 +195,11 @@ function createResponseType(responseType, service, acc) {
 }
 
 /**
- * @param {{ type: string; typeName: string; label: string; name: string; }} field
- * @param {{ enumType: any[]; name: string; }} parentType
+ * @param {import("@grpc/proto-loader").Field} field
+ * @param {import("@grpc/proto-loader").MessageType} parentType
  * @param {TypeRecorder} acc
  * @param {ProtoService} service
+ * @returns {import("graphql").GraphQLType}
  */
 function createOutputType(field, parentType, service, acc) {
   const newType = (() => {
@@ -186,7 +209,8 @@ function createOutputType(field, parentType, service, acc) {
 
     if (isProtoEnum(field.type)) {
       const newEnum = makeEnum(field.typeName, parentType, service);
-      if (acc.hasSeen(newEnum.name)) return acc.get(newEnum.name);
+      const existingType = acc.get(newEnum.name);
+      if (existingType) return existingType;
       acc.add(newEnum.name, newEnum);
       return newEnum;
     }
@@ -194,7 +218,7 @@ function createOutputType(field, parentType, service, acc) {
     const nestedType = parentType.nestedType.find(
       (t) => t.name === field.typeName
     );
-    const protoType = nestedType ?? service.getType(field.typeName);
+    const protoType = service.getMessageType(field.typeName, parentType);
     if (!protoType) throw new Error(`Type "${field.typeName}" missing`);
 
     const newTypeName = `${nestedType ? parentType.name + "_" : ""}${
@@ -203,7 +227,8 @@ function createOutputType(field, parentType, service, acc) {
 
     // stop recursion if we've seen this before
     if (acc.hasSeen(newTypeName)) {
-      return acc.get(newTypeName);
+      const existingType = acc.get(newTypeName);
+      if (existingType) return existingType;
     }
 
     acc.markSeen(newTypeName);
@@ -241,13 +266,13 @@ const dummyTypeASTNode = {
 };
 
 /**
- * @param {{ typeName: any; }} field
- * @param {any | { nestedType: { name: string; }[] }} parentType
+ * @param {import("@grpc/proto-loader").Field} field
+ * @param {import("@grpc/proto-loader").MessageType} parentType
  * @param {ProtoService} service
  */
 export function findTypeForField(field, parentType, service) {
   const nestedType = parentType.nestedType.find(
     (t) => t.name === field.typeName
   );
-  return nestedType ?? service.getType(field.typeName);
+  return nestedType ?? service.getMessageType(field.typeName);
 }

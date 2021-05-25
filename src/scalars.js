@@ -50,7 +50,7 @@ export function isProtoScalar(typeName) {
 }
 
 /**
- * @param {{ type: string; label: string; name: string; }} field
+ * @param {import("@grpc/proto-loader").Field} field
  */
 export function protoScalarToGraphQL(field) {
   switch (field.type) {

@@ -1,26 +1,25 @@
 #!/usr/bin/env node
 
 import meow from "meow";
-import { generate } from "../src/generate.js";
-import { validate } from "../src/validate.js";
-import { convertFederationSdl } from "../src/graphql.js";
-import { readFileSync } from "fs";
+import {
+  generateCommand,
+  serveCommand,
+  validateCommand,
+} from "../src/commands.js";
 
 const cli = meow(
   `
 	Usage
-	  $ graphql-grpc generate --proto file.proto --service com.example.ServiceName --name SERVICE --address localhost:50051
-    $ graphql-grpc validate --schema schema.graphql
-
-	Options
-	  --rainbow, -r  Include a rainbow
+	  $ schema-driven-grpc generate --proto file.proto --service com.example.ServiceName --name SERVICE --address localhost:50051
+    $ schema-driven-grpc validate --schema schema.graphql [--federated] [--watch]
+    $ schema-driven-grpc serve --schema schema.graphql [--port 4000] [--federated]
 `,
   {
     importMeta: import.meta,
     flags: {
       proto: {
         type: "string",
-        alias: "p",
+        alias: "d",
       },
       service: {
         type: "string",
@@ -38,51 +37,28 @@ const cli = meow(
         type: "string",
         alias: "g",
       },
+      port: {
+        type: "string",
+        alias: "p",
+      },
+      federated: {
+        type: "boolean",
+        default: false,
+      },
+      watch: {
+        type: "boolean",
+        default: false,
+      },
     },
   }
 );
 
 if (cli.input[0] === "generate") {
-  if (!cli.flags.name) {
-    console.error("--name missing");
-    process.exit(1);
-  }
-  if (!cli.flags.proto) {
-    console.error("--proto missing");
-    process.exit(1);
-  }
-  if (!cli.flags.service) {
-    console.error("--service missing");
-    process.exit(1);
-  }
-  if (!cli.flags.address) {
-    console.error("--address missing");
-    process.exit(1);
-  }
-
-  console.log(
-    generate([
-      {
-        name: cli.flags.name,
-        protoFile: cli.flags.proto,
-        serviceName: cli.flags.service,
-        address: cli.flags.address,
-      },
-    ])
-  );
+  generateCommand(cli.flags);
 } else if (cli.input[0] === "validate") {
-  if (!cli.flags.schema) {
-    console.error("--schema missing");
-    process.exit(1);
-  }
-  const sdl = convertFederationSdl(readFileSync(cli.flags.schema, "utf-8"));
-  const errors = validate(sdl);
-  if (errors.length) {
-    errors.map((e) => console.log(e));
-    process.exit(1);
-  } else {
-    console.log("Valid schema");
-  }
+  validateCommand(cli.flags);
+} else if (cli.input[0] === "serve") {
+  serveCommand(cli.flags);
 } else {
   console.error("invalid command");
   process.exit(1);

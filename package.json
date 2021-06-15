@@ -18,7 +18,7 @@
     "ink": "^3.0.8",
     "lodash-es": "^4.17.21",
     "meow": "^10.0.1",
-    "react": "^16.0.0"
+    "react": "^16.14.0"
   },
   "scripts": {
     "start:example": "concurrently -k npm:start:example:*",

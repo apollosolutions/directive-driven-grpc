@@ -1484,11 +1484,6 @@ arrify@^1.0.1:
   resolved "https://registry.yarnpkg.com/arrify/-/arrify-1.0.1.tgz#898508da2226f380df904728456849c1501a4b0d"
   integrity sha1-iYUI2iIm84DfkEcoRWhJwVAaSw0=
 
-ascallback@^1.1.1:
-  version "1.1.1"
-  resolved "https://registry.yarnpkg.com/ascallback/-/ascallback-1.1.1.tgz#246086fb5d3ac4e9b78ae79d2d5979efe563da35"
-  integrity sha1-JGCG+106xOm3iuedLVl57+Vj2jU=
-
 astral-regex@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/astral-regex/-/astral-regex-1.0.0.tgz#6c8c3fb827dd43ee3918f27b82782ab7658a6fd9"
@@ -2621,13 +2616,6 @@ graphql@^15.5.1:
   resolved "https://registry.yarnpkg.com/graphql/-/graphql-15.5.1.tgz#f2f84415d8985e7b84731e7f3536f8bb9d383aad"
   integrity sha512-FeTRX67T3LoE3LWAxxOlW2K3Bz+rMYAC18rRguK4wgXaTZMiJwSUwDmPFo3UadAKbzirKIg5Qy+sNJXbpPRnQw==
 
-grpc-create-metadata@^4.0.0:
-  version "4.0.0"
-  resolved "https://registry.yarnpkg.com/grpc-create-metadata/-/grpc-create-metadata-4.0.0.tgz#fa8c279dfa8e2f9b6608728a4702929206ea0f3d"
-  integrity sha512-fT333mIwtA1nqcwrrNs9tLy9MQZYq+g7H7+IQvQCbaEqNLrPTBUd3iD2KostnyGRZ//g8WAaVWR06O33LxUITg==
-  dependencies:
-    lodash.forown "^4.4.0"
-
 hard-rejection@^2.1.0:
   version "2.1.0"
   resolved "https://registry.yarnpkg.com/hard-rejection/-/hard-rejection-2.1.0.tgz#1c6eda5c1685c63942766d79bb40ae773cecd883"
@@ -3625,21 +3613,6 @@ lodash.camelcase@^4.3.0:
   resolved "https://registry.yarnpkg.com/lodash.camelcase/-/lodash.camelcase-4.3.0.tgz#b28aa6288a2b9fc651035c7711f65ab6190331a6"
   integrity sha1-soqmKIorn8ZRA1x3EfZathkDMaY=
 
-lodash.concat@^4.5.0:
-  version "4.5.0"
-  resolved "https://registry.yarnpkg.com/lodash.concat/-/lodash.concat-4.5.0.tgz#b053ae02e4a8008582e7256b9d02bda6d0380395"
-  integrity sha1-sFOuAuSoAIWC5yVrnQK9ptA4A5U=
-
-lodash.forown@^4.4.0:
-  version "4.4.0"
-  resolved "https://registry.yarnpkg.com/lodash.forown/-/lodash.forown-4.4.0.tgz#85115cf04f73ef966eced52511d3893cc46683af"
-  integrity sha1-hRFc8E9z75ZuztUlEdOJPMRmg68=
-
-lodash.isplainobject@^4.0.6:
-  version "4.0.6"
-  resolved "https://registry.yarnpkg.com/lodash.isplainobject/-/lodash.isplainobject-4.0.6.tgz#7c526a52d89b45c45cc690b88163be0497f550cb"
-  integrity sha1-fFJqUtibRcRcxpC4gWO+BJf1UMs=
-
 lodash.pick@^4.4.0:
   version "4.4.0"
   resolved "https://registry.yarnpkg.com/lodash.pick/-/lodash.pick-4.4.0.tgz#52f05610fff9ded422611441ed1fc123a03001b3"
@@ -3720,22 +3693,17 @@ makeerror@1.0.x:
   dependencies:
     tmpl "1.0.x"
 
-mali@^0.43.1:
-  version "0.43.1"
-  resolved "https://registry.yarnpkg.com/mali/-/mali-0.43.1.tgz#21d94892d9ccf534057e7a6d3c15fe7883a3bf8c"
-  integrity sha512-hWqnlaszNj/CXHOd2ErctWqTjII0MqvsW18zUiw+gYROVTGbKtEWzTyk6RKDVR9FJSXBA3W8PF7YlMHLZNnS3A==
+mali@^0.44.0:
+  version "0.44.0"
+  resolved "https://registry.yarnpkg.com/mali/-/mali-0.44.0.tgz#36d0706ccf1a70a577d1dd337f8a456817ad2063"
+  integrity sha512-A5cD1yzaL/CRPjcP6EY8s6IYdvZpvOjvq3O/CJwBevY6ImOovnym331X6uz+anMLsaBa1rD7PkzbFsqmxAgd8A==
   dependencies:
     "@malijs/call-types" "~0.4.0"
     "@malijs/compose" "^1.3.2"
-    ascallback "^1.1.1"
     delegates "^1.0.0"
     destroy "^1.0.4"
     ee-first "^1.1.1"
-    grpc-create-metadata "^4.0.0"
     lodash.camelcase "^4.3.0"
-    lodash.concat "^4.5.0"
-    lodash.forown "^4.4.0"
-    lodash.isplainobject "^4.0.6"
     lodash.pick "^4.4.0"
     lodash.pull "^4.1.0"
     traverse "^0.6.6"

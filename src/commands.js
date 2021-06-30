@@ -4,7 +4,6 @@ import { makeFieldResolver } from "./execute.js";
 import { generate } from "./generate.js";
 import { convertFederationSdl, load } from "./graphql.js";
 import { validate } from "./validate.js";
-import { ApolloServerPluginInlineTraceDisabled } from "apollo-server-core";
 import { watch } from "chokidar";
 import { print, printPathInk } from "./errors.js";
 import React from "react";
@@ -135,7 +134,6 @@ export function serveCommand(flags) {
   new ApolloServer({
     schema,
     fieldResolver: makeFieldResolver(services),
-    plugins: [ApolloServerPluginInlineTraceDisabled()],
     context(args) {
       return args;
     },

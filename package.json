@@ -10,7 +10,7 @@
     "@graphql-tools/schema": "^7.1.5",
     "@graphql-tools/utils": "^7.10.0",
     "@grpc/grpc-js": "^1.3.4",
-    "@grpc/proto-loader": "^0.6.2",
+    "@grpc/proto-loader": "^0.6.4",
     "apollo-server": "^2.25.1",
     "chokidar": "^3.5.2",
     "dataloader": "^2.0.0",
@@ -35,7 +35,7 @@
     "concurrently": "^6.2.0",
     "jest": "^27.0.4",
     "mali": "^0.44.0",
-    "nodemon": "^2.0.7",
+    "nodemon": "^2.0.9",
     "prettier": "^2.3.1",
     "typescript": "^4.3.4"
   },

@@ -43,6 +43,16 @@ npx github:apollosolutions/schema-driven-grpc serve --schema schema.graphql \
    --port 4000
 ```
 
+#### Using Docker
+
+```sh
+docker run \
+  -e FEDERATED=true \   # optional
+  -v $PWD:/etc/config \ # directory with your schema.graphql and .proto files
+  -p 4000:4000 \
+  ghcr.io/apollosolutions/schema-driven-grpc
+```
+
 ## Directives
 
 - [`@grpc`](#grpc)

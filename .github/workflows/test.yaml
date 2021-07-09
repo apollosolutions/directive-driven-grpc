@@ -13,6 +13,8 @@ jobs:
         with:
           node-version: 14.16.1
       - run: npm install -g yarn
+      - name: Authenticate to GitHub Packages
+        run: echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> .npmrc
       - run: yarn install --frozen-lockfile --no-progress
       - run: yarn test
       - run: yarn tsc

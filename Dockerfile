@@ -1,7 +1,7 @@
 FROM node:14-alpine
 WORKDIR /web
 
-COPY package.json yarn.lock ./
+COPY package.json yarn.lock .npmrc ./
 RUN yarn install --frozen-lockfile --production
 
 COPY bin bin/

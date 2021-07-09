@@ -66,7 +66,7 @@ switch (cli.input[0]) {
     serveCommand(cli.flags);
     break;
   case "make-api-schema":
-    stripCommand(cli.flags);
+    console.log(stripCommand(cli.flags));
     break;
   default:
     console.error("invalid command");

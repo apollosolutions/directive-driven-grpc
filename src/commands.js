@@ -176,26 +176,33 @@ export function stripCommand(flags) {
     }
   };
 
+  /** @type {(_: import("graphql").GraphQLFieldConfig<*,*> | import('graphql').GraphQLInputFieldConfig | import('graphql').GraphQLArgumentConfig | import("graphql").GraphQLEnumValueConfig | import("graphql").GraphQLNamedType) => any} */
+  const stripAppliedDirectives = (element) => {
+    if (element.astNode?.directives) {
+      element.astNode = {
+        ...element.astNode,
+        directives: element.astNode.directives.filter(
+          (d) => !d.name.value.startsWith("grpc__")
+        ),
+      };
+    }
+    return element;
+  };
+
   const newSchema = mapSchema(schema, {
-    [MapperKind.FIELD](field) {
-      if (field.astNode?.directives) {
-        field.astNode = {
-          ...field.astNode,
-          directives: field.astNode.directives.filter(
-            (d) => !d.name.value.startsWith("grpc__")
-          ),
-        };
-      }
-      return field;
+    [MapperKind.FIELD]: stripAppliedDirectives,
+    [MapperKind.ARGUMENT]: stripAppliedDirectives,
+    [MapperKind.ENUM_VALUE]: stripAppliedDirectives,
+    [MapperKind.TYPE]: (type) => {
+      return stripGrpcTypes(stripAppliedDirectives(type));
     },
-    [MapperKind.TYPE]: stripGrpcTypes,
     [MapperKind.DIRECTIVE]: stripGrpcTypes,
   });
 
   if (flags.federated) {
     const newSdl = printSchemaWithDirectives(newSchema);
-    console.log(fromValidSDLToFederatedSDL(newSdl));
+    return fromValidSDLToFederatedSDL(newSdl);
   } else {
-    console.log(printSchemaWithDirectives(newSchema));
+    return printSchemaWithDirectives(newSchema);
   }
 }

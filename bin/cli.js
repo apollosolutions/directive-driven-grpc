@@ -5,14 +5,16 @@ import {
   generateCommand,
   serveCommand,
   validateCommand,
+  stripCommand,
 } from "../src/commands.js";
 
 const cli = meow(
   `
 	Usage
-	  $ schema-driven-grpc generate --proto file.proto --service com.example.ServiceName --name SERVICE --address localhost:50051
+    $ schema-driven-grpc generate --proto file.proto --service com.example.ServiceName --name SERVICE --address localhost:50051
     $ schema-driven-grpc validate --schema schema.graphql [--federated] [--watch]
     $ schema-driven-grpc serve --schema schema.graphql [--port 4000] [--federated]
+    $ schema-driven-grpc make-api-schema --schema schema.graphql
 `,
   {
     importMeta: import.meta,
@@ -53,13 +55,20 @@ const cli = meow(
   }
 );
 
-if (cli.input[0] === "generate") {
-  generateCommand(cli.flags);
-} else if (cli.input[0] === "validate") {
-  validateCommand(cli.flags);
-} else if (cli.input[0] === "serve") {
-  serveCommand(cli.flags);
-} else {
-  console.error("invalid command");
-  process.exit(1);
+switch (cli.input[0]) {
+  case "generate":
+    generateCommand(cli.flags);
+    break;
+  case "validate":
+    validateCommand(cli.flags);
+    break;
+  case "serve":
+    serveCommand(cli.flags);
+    break;
+  case "make-api-schema":
+    stripCommand(cli.flags);
+    break;
+  default:
+    console.error("invalid command");
+    process.exit(1);
 }

@@ -1,20 +1,8 @@
 import { readFileSync } from "fs";
-import federation from "@apollo/federation";
-import { printSchemaWithDirectives } from "@graphql-tools/utils";
-import { buildSchema, parse } from "graphql";
+import { buildSchema } from "graphql";
 import { findServices } from "./protos.js";
 import { dirname } from "path";
-
-/**
- * @param {string} sdl
- */
-export function convertFederationSdl(sdl) {
-  const federatedSchema = federation.buildFederatedSchema({
-    typeDefs: parse(sdl),
-    resolvers: {},
-  });
-  return printSchemaWithDirectives(federatedSchema);
-}
+import { fromFederatedSDLToValidSDL } from "@apollosolutions/federation-converter";
 
 /**
  * @param {string} file
@@ -31,7 +19,7 @@ export function load(file, { federated }) {
  */
 export function loadString(sdl, { federated, cwd }) {
   if (federated) {
-    sdl = convertFederationSdl(sdl);
+    sdl = fromFederatedSDLToValidSDL(sdl);
   }
 
   const schema = buildSchema(sdl);

@@ -2,12 +2,22 @@ import { ApolloServer } from "apollo-server";
 import { readFileSync } from "fs";
 import { makeFieldResolver } from "./execute.js";
 import { generate } from "./generate.js";
-import { convertFederationSdl, load } from "./graphql.js";
+import { load } from "./graphql.js";
 import { validate } from "./validate.js";
 import { watch } from "chokidar";
 import { print, printPathInk } from "./errors.js";
 import React from "react";
 import { render, Text } from "ink";
+import { buildSchema } from "graphql";
+import {
+  MapperKind,
+  mapSchema,
+  printSchemaWithDirectives,
+} from "@graphql-tools/utils";
+import {
+  fromFederatedSDLToValidSDL,
+  fromValidSDLToFederatedSDL,
+} from "@apollosolutions/federation-converter";
 
 const h = React.createElement;
 
@@ -63,7 +73,7 @@ export function validateCommand(flags) {
     let sdl = readFileSync(schema, "utf-8");
 
     if (flags.federated) {
-      sdl = convertFederationSdl(sdl);
+      sdl = fromFederatedSDLToValidSDL(sdl);
     }
 
     return validate(load(schema, flags));
@@ -140,4 +150,52 @@ export function serveCommand(flags) {
   })
     .listen({ port: flags.port ?? 4000 })
     .then(({ url }) => console.log(`Running GraphQL API at ${url}`));
+}
+
+/**
+ * @param {{ schema?: string; federated: boolean; }} flags
+ */
+export function stripCommand(flags) {
+  if (!flags.schema) {
+    console.error("--schema missing");
+    process.exit(1);
+  }
+
+  let sdl = readFileSync(flags.schema, "utf-8");
+
+  if (flags.federated) {
+    sdl = fromFederatedSDLToValidSDL(sdl);
+  }
+
+  const schema = buildSchema(sdl);
+
+  /** @type {(_: import("graphql").GraphQLNamedType | import('graphql').GraphQLDirective) => any} */
+  const stripGrpcTypes = (type) => {
+    if (type.name === "grpc" || type.name.startsWith("grpc__")) {
+      return null;
+    }
+  };
+
+  const newSchema = mapSchema(schema, {
+    [MapperKind.FIELD](field) {
+      if (field.astNode?.directives) {
+        field.astNode = {
+          ...field.astNode,
+          directives: field.astNode.directives.filter(
+            (d) => !d.name.value.startsWith("grpc__")
+          ),
+        };
+      }
+      return field;
+    },
+    [MapperKind.TYPE]: stripGrpcTypes,
+    [MapperKind.DIRECTIVE]: stripGrpcTypes,
+  });
+
+  if (flags.federated) {
+    const newSdl = printSchemaWithDirectives(newSchema);
+    console.log(fromValidSDLToFederatedSDL(newSdl));
+  } else {
+    console.log(printSchemaWithDirectives(newSchema));
+  }
 }

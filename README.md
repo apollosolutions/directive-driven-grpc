@@ -337,6 +337,7 @@ schema-driven-grpc make-api-schema \
 - Support for protocol buffer `bytes` field types is buggy.
 - Does not support Apollo Federation subgraph introspection (the
   `{ _service { sdl } }` operation).
+- Does not support nested `@key` directives when using `mapArguments` with entities.
 
 ## Notes
 
@@ -344,12 +345,16 @@ schema-driven-grpc make-api-schema \
 
 1. Find all fields and entity types marked with `@grpc__fetch`. These are the
    "fetch roots".
-2. For each fetch root, walk the graph and compare GraphQL fields against the
+2. From each fetch root, walk the graph and compare GraphQL fields against the
    relevant Protocol Buffer message, starting with the RPC response type.
    Because RPC APIs are not recursive, all paths must terminate.
    - A path terminates at scalar or enum fields, or at another fetch root.
    - If type recursion is encountered, the field must be nullable and we can end
      a path here as well.
+   - While walking the graph, each time we encounter a fetch root, record the
+     protobuf type corresponding with the parent of the fetch root. We'll use
+     that type for validating arguments plucked off parents with
+     `mapArguments: { sourceField: }`.
 3. At each node in the graph, check that field names and type match (taking
    rename directives into account).
 4. Validate that the field arguments on a fetch root match the fields on the RPC

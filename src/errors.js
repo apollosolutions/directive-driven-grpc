@@ -344,7 +344,7 @@ export function makeInputMapMissingGqlFieldError({
   return {
     code: ErrorCodes.InputMapMissingSourceField,
     key: `${parentName}.${fieldName}(${gql} => ${proto})`,
-    message: `${parentName}.${fieldName} (calling rpc ${rpcName}) is trying to map the GraphQL field ${gql} to request type ${requestType}.${proto}, but ${gql} doesn't exist`,
+    message: `${parentName}.${fieldName} (calling rpc ${rpcName}) is trying to map the GraphQL field ${gql} to request field ${requestType}.${proto}, but ${gql} doesn't exist`,
     path,
   };
 }
@@ -376,7 +376,7 @@ export function makeInputMapMismatchedTypesError({
   return {
     code: ErrorCodes.InputMapIncorrectType,
     key: `${parentName}.${fieldName}(${gql} => ${proto})`,
-    message: `${parentName}.${fieldName} (calling rpc ${rpcName}) is trying to map the GraphQL field ${gql}:${gqlType} request type ${requestType}.${proto}:${protoType}`,
+    message: `${parentName}.${fieldName} (calling rpc ${rpcName}) is trying to map the GraphQL field ${gql}:${gqlType} to request field ${requestType}.${proto}:${protoType}`,
     path,
   };
 }

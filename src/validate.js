@@ -38,7 +38,11 @@ import {
 } from "./errors.js";
 import { findTypeForField } from "./objects.js";
 import { isMessageType, ProtoService } from "./protos.js";
-import { isProtoScalar, SCALAR_PROTO_MAP } from "./scalars.js";
+import {
+  isProtoScalar,
+  protoScalarToGraphQL,
+  SCALAR_PROTO_MAP,
+} from "./scalars.js";
 
 /**
  * @param {{ schema: GraphQLSchema; services: Map<string, ProtoService> }} params
@@ -664,69 +668,134 @@ function validateFetchRootInputMaps({
       );
     }
 
-    // the "source" passed to the resolver will be the original
-    // protobuf message, which is good because we want access to
-    // the original data, especially if some fields (like foreign keys)
-    // are not exposed in graphql
+    // The "source" passed to the resolver is usually the original
+    // protobuf message, which allows us to access the original data
+    // (like foreign keys) that may not be exposed in graphql.
     const fetchRootParentKey = `${root.parent.name}.${root.field.name}`;
     const possibleSourceMessageTypesNames =
-      fetchRootParents.get(fetchRootParentKey) ?? new Set();
+      fetchRootParents.get(fetchRootParentKey);
 
-    const possibleSourceMessageTypes = Array.from(
-      possibleSourceMessageTypesNames
-    )
-      .map((name) => service.getMessageType(name))
-      .filter(isMessageType);
+    // The other scenario is entering the graph via an entity. In this case, we
+    // don't have a parent protobuf type, and instead we'll map arguments from
+    // the entity representation by looking at the @key fields
+    if (!possibleSourceMessageTypesNames) {
+      const { key } = getDirectives(schema, root.parent);
+      const isEntity = !!key;
 
-    // the field must exist on every protobuf type that we may
-    // encounter from various paths to this fetch root
-    const fieldExistsOnProtobuf = possibleSourceMessageTypes.every((proto) =>
-      proto.field.find((f) => f.name === sourceField)
-    );
+      if (!isEntity) {
+        // TODO
+        throw new Error(
+          `${root.parent.name} is not an entity and cannot be reached via an RPC, so it's not eligible to host a fetch root.`
+        );
+      }
 
-    if (!fieldExistsOnProtobuf) {
-      errors.push(
-        makeInputMapMissingGqlFieldError({
-          parentName: root.parent.name,
-          fieldName: root.field.name,
-          gql: sourceField, // TODO
-          proto: arg, // TODO
-          rpcName: root.rpcName,
-          requestType: rpc.requestType.type.name,
-          path,
-        })
+      /** @type {{ fields: string }[]} */
+      const keys = Array.isArray(key) ? key : [key];
+
+      // TODO properly parse selection set
+      const possibleSourceFields = keys.map((k) => k.fields.split(/\s+/));
+      const fieldExistsInEntityRepresentation = possibleSourceFields.every(
+        (fields) => fields.find((f) => f === sourceField)
       );
-    }
 
-    if (messageField && fieldExistsOnProtobuf) {
-      const protobufFieldTypes = possibleSourceMessageTypes
-        .flatMap((proto) => proto.field.filter((f) => f.name === sourceField))
-        .map((field) => field.type);
-      const uniqueTypes = Array.from(new Set(protobufFieldTypes));
+      if (!fieldExistsInEntityRepresentation) {
+        errors.push(
+          makeInputMapMissingGqlFieldError({
+            parentName: root.parent.name,
+            fieldName: root.field.name,
+            gql: sourceField, // TODO
+            proto: arg, // TODO
+            rpcName: root.rpcName,
+            requestType: rpc.requestType.type.name,
+            path,
+          })
+        );
+      }
 
-      if (uniqueTypes.length > 1) throw new Error("what do we do here?");
+      if (messageField && fieldExistsInEntityRepresentation) {
+        const sourceFieldType = root.parent.getFields()[sourceField]?.type;
+        const namedSourceFieldType = getNamedType(sourceFieldType);
 
-      if (isProtoScalar(messageField.type)) {
-        if (uniqueTypes[0] !== messageField.type) {
-          errors.push(
-            // TODO fix this message!
-            makeInputMapMismatchedTypesError({
-              parentName: root.parent.name,
-              fieldName: root.field.name,
-              gql: sourceField, // TODO
-              gqlType: uniqueTypes[0],
-              proto: arg, // TODO
-              protoType: messageField.type,
-              rpcName: root.rpcName,
-              requestType: rpc.requestType.type.name,
-              path,
-            })
+        if (isProtoScalar(messageField.type)) {
+          if (protoScalarToGraphQL(messageField) !== namedSourceFieldType) {
+            errors.push(
+              // TODO fix this message!
+              makeInputMapMismatchedTypesError({
+                parentName: root.parent.name,
+                fieldName: root.field.name,
+                gql: sourceField, // TODO
+                gqlType: namedSourceFieldType.name,
+                proto: arg, // TODO
+                protoType: messageField.type,
+                rpcName: root.rpcName,
+                requestType: rpc.requestType.type.name,
+                path,
+              })
+            );
+          }
+        } else {
+          throw new Error(
+            "mapping to object types with @grpc__fetch(mapArguments:) is not supported"
           );
         }
-      } else {
-        throw new Error(
-          "mapping to object types with @grpc__fetch(mapArguments:) is not supported"
+      }
+    } else {
+      const possibleSourceMessageTypes = Array.from(
+        possibleSourceMessageTypesNames
+      )
+        .map((name) => service.getMessageType(name))
+        .filter(isMessageType);
+
+      // the field must exist on every protobuf type that we may
+      // encounter from various paths to this fetch root
+      const fieldExistsOnProtobuf = possibleSourceMessageTypes.every((proto) =>
+        proto.field.find((f) => f.name === sourceField)
+      );
+
+      if (!fieldExistsOnProtobuf) {
+        errors.push(
+          makeInputMapMissingGqlFieldError({
+            parentName: root.parent.name,
+            fieldName: root.field.name,
+            gql: sourceField, // TODO
+            proto: arg, // TODO
+            rpcName: root.rpcName,
+            requestType: rpc.requestType.type.name,
+            path,
+          })
         );
+      }
+
+      if (messageField && fieldExistsOnProtobuf) {
+        const protobufFieldTypes = possibleSourceMessageTypes
+          .flatMap((proto) => proto.field.filter((f) => f.name === sourceField))
+          .map((field) => field.type);
+        const uniqueTypes = Array.from(new Set(protobufFieldTypes));
+
+        if (uniqueTypes.length > 1) throw new Error("what do we do here?");
+
+        if (isProtoScalar(messageField.type)) {
+          if (uniqueTypes[0] !== messageField.type) {
+            errors.push(
+              // TODO fix this message!
+              makeInputMapMismatchedTypesError({
+                parentName: root.parent.name,
+                fieldName: root.field.name,
+                gql: sourceField, // TODO
+                gqlType: uniqueTypes[0],
+                proto: arg, // TODO
+                protoType: messageField.type,
+                rpcName: root.rpcName,
+                requestType: rpc.requestType.type.name,
+                path,
+              })
+            );
+          }
+        } else {
+          throw new Error(
+            "mapping to object types with @grpc__fetch(mapArguments:) is not supported"
+          );
+        }
       }
     }
   }
@@ -737,7 +806,7 @@ function validateFetchRootInputMaps({
 /**
  * @param {{
  *  root: import("./typings").FetchRoot<any>;
- *  fetchRootParents:Map<string, Set<string>>;
+ *  fetchRootParents: Map<string, Set<string>>;
  *  path: import("./typings").Path;
  *  schema: GraphQLSchema;
  *  service: ProtoService;

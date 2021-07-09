@@ -3,6 +3,7 @@ import { validate } from "../src/validate.js";
 import { readFileSync } from "fs";
 import { print } from "../src/errors.js";
 import { loadString } from "../src/graphql.js";
+import { generateSdl } from "./__fixtures__/posts-utils.js";
 
 test("generate -> validate", () => {
   const generated = generate(
@@ -133,7 +134,7 @@ test("wrong dig path", () => {
     ${readFileSync("test/__fixtures__/core.graphql")}
 
     type Query {
-      one: Message! 
+      one: Message!
         @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething", dig: "foo")
     }
 
@@ -161,7 +162,7 @@ test("wrong arguments", () => {
         wrong: String
         renamedWrong: String @grpc__renamed(from: "alsowrong")
         renamedRight: String @grpc__renamed(from: "field_string")
-      ): Message! 
+      ): Message!
         @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
     }
 
@@ -188,7 +189,7 @@ test("wrong argument type", () => {
     ${readFileSync("test/__fixtures__/core.graphql")}
 
     type Query {
-      doSomething(field_string: Int): Message! 
+      doSomething(field_string: Int): Message!
         @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
     }
 
@@ -212,7 +213,7 @@ test("incorrect input map", () => {
     ${readFileSync("test/__fixtures__/core.graphql")}
 
     type Query {
-      one: Message! 
+      one: Message!
         @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
     }
 
@@ -222,8 +223,8 @@ test("incorrect input map", () => {
       renamed_float: Float @grpc__renamed(from: "field_float")
       two: Message
         @grpc__fetch(
-          service: KITCHEN_SINK, 
-          rpc: "DoSomething", 
+          service: KITCHEN_SINK,
+          rpc: "DoSomething",
           mapArguments: [
             { sourceField: "missingsource", arg: "field_string" }
             { sourceField: "field_int32", arg: "missingproto" }
@@ -238,17 +239,79 @@ test("incorrect input map", () => {
   expect(validate(loadString(sdl, { cwd: process.cwd() })).map(print))
     .toMatchInlineSnapshot(`
     Array [
-      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field missingsource to request type Message.field_string, but missingsource doesn't exist
+      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field missingsource to request field Message.field_string, but missingsource doesn't exist
             Message.two:Message calls KitchenSink/DoSomething
     ",
       "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field field_int32 to request type Message.missingproto, but Message.missingproto doesn't exist
             Message.two:Message calls KitchenSink/DoSomething
     ",
-      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field field_string:TYPE_STRING request type Message.field_int32:TYPE_INT32
+      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field field_string:TYPE_STRING to request field Message.field_int32:TYPE_INT32
             Message.two:Message calls KitchenSink/DoSomething
     ",
-      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field renamed_float to request type Message.field_float, but renamed_float doesn't exist
+      "[ERROR] Message.two (calling rpc DoSomething) is trying to map the GraphQL field renamed_float to request field Message.field_float, but renamed_float doesn't exist
             Message.two:Message calls KitchenSink/DoSomething
+    ",
+    ]
+  `);
+});
+
+test("mapArguments for entities", () => {
+  const sdl = generateSdl(`#graphql
+      type Query {
+        post(id: ID! @grpc__renamed(from: "post_id")): Post
+          @grpc__fetch(
+            service: POSTS
+            rpc: "GetPost"
+            dig: "post"
+          )
+      }
+
+      type Post {
+        id: ID
+        title: String
+        author: User @grpc__wrap(gql: "id", proto: "author_id")
+      }
+
+      type User @extends @key(fields: "id") {
+        id: ID!
+        # works
+        firstPost: Post
+          @grpc__fetch(
+            service: POSTS
+            rpc: "GetPostForUser"
+            dig: "post"
+            mapArguments: { sourceField: "id", arg: "user_id" }
+          )
+        # doesn't work —  missing field on entity representation
+        lastPost: Post
+          @grpc__fetch(
+            service: POSTS
+            rpc: "GetPostForUser"
+            dig: "post"
+            mapArguments: { sourceField: "doesntExist", arg: "user_id" }
+          )
+        # doesn't work — mismatched types
+        middlePost: Post
+          @grpc__fetch(
+            service: POSTS
+            rpc: "GetPostForUser"
+            dig: "post"
+            mapArguments: { sourceField: "id", arg: "testing_validation" }
+          )
+      }
+    `);
+
+  expect(
+    validate(loadString(sdl, { federated: true, cwd: process.cwd() })).map(
+      print
+    )
+  ).toMatchInlineSnapshot(`
+    Array [
+      "[ERROR] User.lastPost (calling rpc GetPostForUser) is trying to map the GraphQL field doesntExist to request field GetPostForUserRequest.user_id, but doesntExist doesn't exist
+            User.lastPost:Post calls Posts/GetPostForUser
+    ",
+      "[ERROR] User.middlePost (calling rpc GetPostForUser) is trying to map the GraphQL field id:ID to request field GetPostForUserRequest.testing_validation:TYPE_INT32
+            User.middlePost:Post calls Posts/GetPostForUser
     ",
     ]
   `);
@@ -259,7 +322,7 @@ test("list types", async () => {
     ${readFileSync("test/__fixtures__/core.graphql")}
 
     type Query {
-      one(field_strings: String field_int32: [Int]): Message! 
+      one(field_strings: String field_int32: [Int]): Message!
         @grpc__fetch(service: KITCHEN_SINK, rpc: "DoSomething")
     }
 

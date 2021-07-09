@@ -1,10 +1,20 @@
 syntax = "proto3";
 
 service Posts {
+  rpc GetPost (GetPostRequest) returns (GetPostResponse) {}
   rpc ListPosts (ListPostsRequest) returns (ListPostsResponse) {}
   rpc BatchGetPosts (BatchGetPostsRequest) returns (BatchGetPostsResponse) {}
   rpc GetAuthor (GetAuthorRequest) returns (GetAuthorResponse) {}
   rpc BatchGetAuthors (BatchGetAuthorsRequest) returns (BatchGetAuthorsResponse) {}
+  rpc GetPostForUser (GetPostForUserRequest) returns (GetPostForUserResponse) {}
+}
+
+message GetPostRequest {
+  string post_id = 1;
+}
+
+message GetPostResponse {
+  Post post = 1;
 }
 
 message ListPostsRequest {}
@@ -35,6 +45,15 @@ message BatchGetAuthorsRequest {
 
 message BatchGetAuthorsResponse {
   repeated Author authors = 2;
+}
+
+message GetPostForUserRequest {
+  string user_id = 1;
+  int32 testing_validation = 2;
+}
+
+message GetPostForUserResponse {
+  Post post = 1;
 }
 
 message Post {

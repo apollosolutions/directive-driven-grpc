@@ -5,6 +5,7 @@ import { findServices } from "../src/protos.js";
 import { validate } from "../src/validate.js";
 import { run } from "./__fixtures__/posts.js";
 import { print } from "../src/errors.js";
+import { generateSdl } from "./__fixtures__/posts-utils.js";
 
 test("dataloader", async () => {
   const schema = buildSchema(
@@ -16,7 +17,7 @@ test("dataloader", async () => {
   type Post {
     id: ID
     title: String
-    author: Author 
+    author: Author
       @grpc__fetch(
         service: POSTS
         rpc: "BatchGetAuthors"
@@ -42,7 +43,7 @@ test("dataloader", async () => {
 
   const result = await graphql({
     schema,
-    source: `{ 
+    source: `{
       posts {
         title
         author {
@@ -106,7 +107,7 @@ test("dataloader args", async () => {
   const schema = buildSchema(
     generateSdl(`#graphql
   type Query {
-    post(id: ID!): Post 
+    post(id: ID!): Post
       @grpc__fetch(service: POSTS, rpc: "BatchGetPosts", dig: "posts", dataloader: {
         key: "$args.id"
         listArgument: "ids"
@@ -127,7 +128,7 @@ test("dataloader args", async () => {
 
   const result = await graphql({
     schema,
-    source: `{ 
+    source: `{
       one: post(id: "1") {
         title
       }
@@ -174,7 +175,7 @@ describe("validation", () => {
     const sdl = generateSdl(`#graphql
   type Query {
     posts: [Post] @grpc__fetch(service: POSTS, rpc: "ListPosts", dig: "posts")
-    post(id: ID!): Post 
+    post(id: ID!): Post
       @grpc__fetch(service: POSTS, rpc: "BatchGetPosts", dig: "posts", dataloader: {
         key: "$args.id"
         listArgument: "ids"
@@ -185,7 +186,7 @@ describe("validation", () => {
   type Post {
     id: ID
     title: String
-    author: Author 
+    author: Author
       @grpc__fetch(
         service: POSTS
         rpc: "BatchGetAuthors"
@@ -219,7 +220,7 @@ describe("validation", () => {
       type Post {
         id: ID
         title: String
-        author: Author 
+        author: Author
           @grpc__fetch(
             service: POSTS
             rpc: "BatchGetAuthors"
@@ -260,7 +261,7 @@ describe("validation", () => {
   test("incorrect dataloader params ($args)", async () => {
     const sdl = generateSdl(`#graphql
       type Query {
-        post(id: ID!): Post 
+        post(id: ID!): Post
           @grpc__fetch(service: POSTS, rpc: "BatchGetPosts", dig: "posts", dataloader: {
             key: "$args.not_a_real_field"
             listArgument: "ids"
@@ -291,62 +292,3 @@ describe("validation", () => {
     `);
   });
 });
-
-/**
- * @param {string} additional
- */
-function generateSdl(additional) {
-  return `#graphql
-  directive @grpc(
-    protoFile: String!
-    serviceName: String!
-    address: String!
-    metadata: [grpc__Metadata!]
-  ) on ENUM_VALUE
-
-  input grpc__Metadata {
-    name: String!
-    value: String
-    valueFrom: String
-  }
-
-  directive @grpc__renamed(
-    from: String!
-  ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
-
-  directive @grpc__wrap(
-    gql: String!
-    proto: String!
-  ) repeatable on FIELD_DEFINITION
-
-  directive @grpc__fetch(
-    service: grpc__Service!
-    rpc: String!
-    dig: String
-    mapArguments: [grpc__InputMap!]
-    dataloader: grpc__Dataloader
-  ) on FIELD_DEFINITION | OBJECT
-
-  input grpc__InputMap {
-    sourceField: String!
-    arg: String!
-  }
-
-  input grpc__Dataloader {
-    key: String!
-    listArgument: String!
-    responseKey: String
-  }
-
-  enum grpc__Service {
-    POSTS
-      @grpc(
-        protoFile: "test/__fixtures__/posts.proto"
-        serviceName: "Posts"
-        address: "localhost:50002"
-      )
-  }
-
-  ${additional}
-  `;
-}

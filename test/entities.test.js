@@ -1,14 +1,15 @@
+import { fromFederatedSDLToValidSDL } from "@apollosolutions/federation-converter";
 import { buildSchema, graphql } from "graphql";
 import { print } from "../src/errors.js";
 import { makeFieldResolver } from "../src/execute.js";
-import { convertFederationSdl, loadString } from "../src/graphql.js";
+import { loadString } from "../src/graphql.js";
 import { findServices } from "../src/protos.js";
 import { validate } from "../src/validate.js";
 import { run } from "./__fixtures__/posts.js";
 
 test("entities", async () => {
   const schema = buildSchema(
-    convertFederationSdl(
+    fromFederatedSDLToValidSDL(
       generateSdl(`#graphql
   type Query {
     posts: [Post] @grpc__fetch(service: POSTS, rpc: "ListPosts", dig: "posts")
@@ -29,7 +30,7 @@ test("entities", async () => {
     title: String
   }
 
-  type Author @key(fields: "id")       
+  type Author @key(fields: "id")
     @grpc__fetch(
       service: POSTS
       rpc: "BatchGetAuthors"
@@ -52,7 +53,7 @@ test("entities", async () => {
 
   const result = await graphql({
     schema,
-    source: `{ 
+    source: `{
       _entities(representations: [
         { __typename: "Post" id: "2" },
         { __typename: "Author" id: "1" },

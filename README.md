@@ -307,6 +307,22 @@ server
   .then(({ url }) => console.log(`Running GraphQL API at ${url}`));
 ```
 
+## With Apollo Studio & Federation
+
+The `grpc` directives and types should be stripped from your API schema so as
+not to expose implementation details to API consumers. Also, types like the
+`grpc__Service` enum will conflict with other schemas if you are composing
+multiple schema-driven-grpc services together using Apollo Federation.
+
+Before publishing a schema-driven-grpc API to Apollo Studio or another schema
+registry, run the `make-api-schema` command from this package:
+
+```sh
+schema-driven-grpc make-api-schema \
+  --schema schema-with-grpc-directives.graphql \
+  --federated > api-schema.graphql
+```
+
 ## Known Limitations
 
 - gRPC client credentials are currently hardcoded to `createInsecure` (appropriate

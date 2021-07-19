@@ -16,7 +16,7 @@
     "chokidar": "^3.5.2",
     "dataloader": "^2.0.0",
     "graphql": "^15.5.1",
-    "ink": "^3.0.8",
+    "ink": "^3.0.9",
     "lodash-es": "^4.17.21",
     "meow": "^10.1.0",
     "prettier": "^2.3.1",

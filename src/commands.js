@@ -18,6 +18,7 @@ import {
   fromFederatedSDLToValidSDL,
   fromValidSDLToFederatedSDL,
 } from "@apollosolutions/federation-converter";
+import { ApolloServerPluginInlineTrace } from "apollo-server-core";
 
 const h = React.createElement;
 
@@ -147,6 +148,7 @@ export function serveCommand(flags) {
     context(args) {
       return args;
     },
+    plugins: [ApolloServerPluginInlineTrace()],
   })
     .listen({ port: flags.port ?? 4000 })
     .then(({ url }) => console.log(`Running GraphQL API at ${url}`));

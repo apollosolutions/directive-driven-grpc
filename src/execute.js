@@ -97,7 +97,10 @@ async function resolveFetch(
   applyArgumentRenames(info, args);
 
   if (mapArguments) {
-    args = /** @type {TArgs} */ (convertInputArgs(mapArguments, source));
+    args = {
+      ...args,
+      .../** @type {TArgs} */ (convertInputArgs(mapArguments, source)),
+    };
   }
 
   const resp = await call(args);

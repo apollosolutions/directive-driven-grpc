@@ -277,6 +277,34 @@ type Person @key(fields: "id") @extends {
 }
 ```
 
+## Nullability
+
+GraphQL and gRPC differ in their approach to nullability.
+
+- In GraphQL, nullability is a first-class feature of the schema definition
+  language.
+- gRPC's wire protocol (Protocol Buffers) do not differentiate between
+  "zero values" and omitted values. On the wire you can't tell if a string field
+  was omitted from the response or is a zero-length string.
+
+With this in mind, this project takes the stance that no scalar values are
+nullable. You're free to add `!` to your GraphQL schema for scalar, enum, and
+list fields — they will never be null.
+
+| Field Type | Zero Value                       |
+| ---------- | -------------------------------- |
+| String     | `""`                             |
+| Int        | `0`                              |
+| Float      | `0`                              |
+| Boolean    | `false`                          |
+| ID         | `""`                             |
+| enum       | First value of the Protobuf enum |
+| list       | `[]`                             |
+
+Fields that return messages types _can_ be null, and there's no built-in way to
+determine nullability from `.proto` files, so the safest choice is to never use
+a `!` on a GraphQL field that returns a composite type.
+
 ## Usage in your own GraphQL server
 
 ```sh

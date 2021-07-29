@@ -62,6 +62,9 @@ export class ProtoService {
       longs: String,
       enums: String,
       bytes: String,
+      arrays: true,
+      defaults: true,
+      oneofs: true,
     });
 
     const service = definitions[serviceName];

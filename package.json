@@ -8,7 +8,7 @@
   "dependencies": {
     "@apollo/federation": "^0.26.0",
     "@apollosolutions/federation-converter": "^0.2.2",
-    "@graphql-tools/schema": "^7.1.5",
+    "@graphql-tools/schema": "^8.1.2",
     "@graphql-tools/utils": "^7.10.0",
     "@grpc/grpc-js": "^1.3.6",
     "@grpc/proto-loader": "^0.6.4",

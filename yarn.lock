@@ -10,6 +10,15 @@
     apollo-graphql "^0.9.3"
     lodash.xorby "^4.7.0"
 
+"@apollo/federation@^0.32.0":
+  version "0.32.0"
+  resolved "https://registry.yarnpkg.com/@apollo/federation/-/federation-0.32.0.tgz#be83d3e72f40bf1c520860c540a53b414cd71bbf"
+  integrity sha512-t2RS4ziaXd+j6rx9quGWIK/1W20K6jIaApAoUwtxW2EkWrKnqoX4gCBrTh3KdQb3V64SmTbM4CjRyNSDWf1oXg==
+  dependencies:
+    apollo-graphql "^0.9.3"
+    apollo-server-types "^3.0.2"
+    lodash.xorby "^4.7.0"
+
 "@apollo/protobufjs@1.2.2":
   version "1.2.2"
   resolved "https://registry.yarnpkg.com/@apollo/protobufjs/-/protobufjs-1.2.2.tgz#4bd92cd7701ccaef6d517cdb75af2755f049f87c"

@@ -3085,11 +3085,6 @@ lodash.camelcase@^4.3.0:
   resolved "https://registry.yarnpkg.com/lodash.camelcase/-/lodash.camelcase-4.3.0.tgz#b28aa6288a2b9fc651035c7711f65ab6190331a6"
   integrity sha1-soqmKIorn8ZRA1x3EfZathkDMaY=
 
-lodash.pick@^4.4.0:
-  version "4.4.0"
-  resolved "https://registry.yarnpkg.com/lodash.pick/-/lodash.pick-4.4.0.tgz#52f05610fff9ded422611441ed1fc123a03001b3"
-  integrity sha1-UvBWEP/53tQiYRRB7R/BI6AwAbM=
-
 lodash.pull@^4.1.0:
   version "4.1.0"
   resolved "https://registry.yarnpkg.com/lodash.pull/-/lodash.pull-4.1.0.tgz#60060cc6bd625b4d4567ec27dc45cd1be9eec012"
@@ -3165,10 +3160,10 @@ makeerror@1.0.x:
   dependencies:
     tmpl "1.0.x"
 
-mali@^0.44.2:
-  version "0.44.2"
-  resolved "https://registry.yarnpkg.com/mali/-/mali-0.44.2.tgz#5570edbe94b5061435ce03bf4c76da7393eb3eb0"
-  integrity sha512-KgImx2lRgwFBoXVWimdiaPWNg4iLZ5yRSB2upxs1wyBG1V3xnYIxEhLyQQqTzrYdrY8LUbetJjvaXyWjmu+PBw==
+mali@^0.45.0:
+  version "0.45.0"
+  resolved "https://registry.yarnpkg.com/mali/-/mali-0.45.0.tgz#e5275d56bca8f3d4e9fdeb6a208c9e126e8f792c"
+  integrity sha512-otKY08NpKtuWmC+SxAyygP1fWv/mzBtsKI7emvylWDpJtSlyqfsp4u0wf673cjw6+TkoHLmSTAuuEy2B542OMg==
   dependencies:
     "@malijs/call-types" "~0.4.0"
     "@malijs/compose" "^1.3.2"
@@ -3176,9 +3171,7 @@ mali@^0.44.2:
     destroy "^1.0.4"
     ee-first "^1.1.1"
     lodash.camelcase "^4.3.0"
-    lodash.pick "^4.4.0"
     lodash.pull "^4.1.0"
-    traverse "^0.6.6"
 
 map-obj@^1.0.0:
   version "1.0.1"
@@ -4263,11 +4256,6 @@ tr46@^2.1.0:
   integrity sha512-15Ih7phfcdP5YxqiB+iDtLoaTz4Nd35+IiAv0kQ5FNKHzXgdWqPoTIqEDDJmXceQt4JZk6lVPT8lnDlPpGDppw==
   dependencies:
     punycode "^2.1.1"
-
-traverse@^0.6.6:
-  version "0.6.6"
-  resolved "https://registry.yarnpkg.com/traverse/-/traverse-0.6.6.tgz#cbdf560fd7b9af632502fed40f918c157ea97137"
-  integrity sha1-y99WD9e5r2MlAv7UD5GMFX6pcTc=
 
 tree-kill@^1.2.2:
   version "1.2.2"

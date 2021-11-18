@@ -6,22 +6,21 @@
   "bin": "bin/cli.js",
   "exports": "./index.js",
   "dependencies": {
-    "@apollo/federation": "^0.26.0",
     "@apollosolutions/federation-converter": "^0.2.2",
     "@graphql-tools/schema": "^7.1.5",
     "@graphql-tools/utils": "^7.10.0",
-    "@grpc/grpc-js": "^1.3.6",
-    "@grpc/proto-loader": "^0.6.4",
-    "apollo-server": "^3.0.2",
-    "apollo-server-core": "^3.0.2",
+    "@grpc/grpc-js": "^1.4.4",
+    "@grpc/proto-loader": "^0.6.7",
+    "apollo-server": "^3.5.0",
+    "apollo-server-core": "^3.5.0",
     "chokidar": "^3.5.2",
     "dataloader": "^2.0.0",
     "graphql": "^15.5.1",
-    "ink": "^3.0.9",
+    "ink": "^3.2.0",
     "lodash-es": "^4.17.21",
-    "meow": "^10.1.0",
-    "prettier": "^2.3.1",
-    "react": "^16.14.0"
+    "meow": "^10.1.1",
+    "prettier": "^2.4.1",
+    "react": "^17.0.2"
   },
   "scripts": {
     "start:example": "concurrently -k npm:start:example:*",
@@ -31,17 +30,17 @@
     "test": "node --experimental-vm-modules $(yarn bin)/jest test/"
   },
   "devDependencies": {
-    "@types/jest": "^26.0.23",
-    "@types/lodash-es": "^4.17.4",
-    "@types/prettier": "^2.3.1",
-    "@types/react": "^17.0.13",
-    "concurrently": "^6.2.0",
-    "jest": "^27.0.4",
-    "mali": "^0.44.2",
-    "nodemon": "^2.0.12",
-    "typescript": "^4.3.5"
+    "@types/jest": "^27.0.2",
+    "@types/lodash-es": "^4.17.5",
+    "@types/prettier": "^2.4.2",
+    "@types/react": "^17.0.35",
+    "concurrently": "^6.4.0",
+    "jest": "^27.3.1",
+    "mali": "^0.46.0",
+    "nodemon": "^2.0.15",
+    "typescript": "^4.5.2"
   },
   "resolutions": {
-    "**/react": "^16.14.0"
+    "**/react": "^17.0.2"
   }
 }

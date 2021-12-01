@@ -89,9 +89,12 @@ async function resolveFetch(
   if (dataloaderParams) {
     const dataloaderName = dataloaderKey ?? getNamedType(info.returnType).name;
     const dataloader = getDataloader(ctx, dataloaderName, directive, call);
-    return dataloader.load(
-      resolveDataloaderKey(source, args, dataloaderParams)
-    );
+    const key = resolveDataloaderKey(source, args, dataloaderParams);
+    if (key) {
+      return dataloader.load(key);
+    } else {
+      return null;
+    }
   }
 
   applyArgumentRenames(info, args);

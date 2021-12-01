@@ -6,7 +6,7 @@
   "bin": "bin/cli.js",
   "exports": "./index.js",
   "dependencies": {
-    "@apollosolutions/federation-converter": "^0.2.2",
+    "@apollo/subgraph": "^0.1.5",
     "@graphql-tools/schema": "^7.1.5",
     "@graphql-tools/utils": "^7.10.0",
     "@grpc/grpc-js": "^1.4.4",

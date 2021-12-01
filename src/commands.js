@@ -17,7 +17,7 @@ import {
 import {
   fromFederatedSDLToValidSDL,
   fromValidSDLToFederatedSDL,
-} from "@apollosolutions/federation-converter";
+} from "./federation.js";
 import { ApolloServerPluginInlineTrace } from "apollo-server-core";
 
 const h = React.createElement;

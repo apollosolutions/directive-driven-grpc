@@ -7,20 +7,20 @@ test("make-api-schema", async () => {
   });
 
   expect(result).toMatchInlineSnapshot(`
-"type Author {
-  id: ID
-  name: String
-}
+    "type Post {
+      id: ID
+      title: String
+      author: Author
+    }
 
-type Post {
-  id: ID
-  title: String
-  author: Author
-}
+    type Author {
+      id: ID
+      name: String
+    }
 
-type Query {
-  posts: [Post]
-}
-"
-`);
+    type Query {
+      posts: [Post]
+    }
+    "
+  `);
 });

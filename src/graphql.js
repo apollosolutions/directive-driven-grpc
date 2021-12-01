@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { buildSchema } from "graphql";
 import { findServices } from "./protos.js";
 import { dirname } from "path";
-import { fromFederatedSDLToValidSDL } from "@apollosolutions/federation-converter";
+import { fromFederatedSDLToValidSDL } from "./federation.js";
 
 /**
  * @param {string} file

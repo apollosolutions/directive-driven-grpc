@@ -1,4 +1,4 @@
-import { fromFederatedSDLToValidSDL } from "@apollosolutions/federation-converter";
+import { fromFederatedSDLToValidSDL } from "../src/federation.js";
 import { buildSchema, graphql } from "graphql";
 import { print } from "../src/errors.js";
 import { makeFieldResolver } from "../src/execute.js";

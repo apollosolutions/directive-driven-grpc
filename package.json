@@ -20,7 +20,7 @@
     "lodash-es": "^4.17.21",
     "meow": "^10.1.1",
     "prettier": "^2.4.1",
-    "react": "^17.0.2"
+    "react": "^18.1.0"
   },
   "scripts": {
     "start:example": "concurrently -k npm:start:example:*",
@@ -33,7 +33,7 @@
     "@types/jest": "^27.0.2",
     "@types/lodash-es": "^4.17.5",
     "@types/prettier": "^2.4.2",
-    "@types/react": "^17.0.35",
+    "@types/react": "^18.0.10",
     "concurrently": "^6.4.0",
     "jest": "^27.3.1",
     "mali": "^0.46.0",
